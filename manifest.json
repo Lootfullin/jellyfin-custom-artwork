@@ -1,0 +1,21 @@
+[
+  {
+    "guid": "6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1",
+    "name": "Cowabunga Custom Artwork",
+    "description": "Подставляет кастомные постеры и логотипы из приватного облака Cowabunga фильмам, сериалам, сезонам и коллекциям.",
+    "overview": "Кастомные обложки из приватного облака",
+    "owner": "iMaks533",
+    "category": "MoviesAndShows",
+    "imageUrl": "https://raw.githubusercontent.com/Lootfullin/jellyfin-custom-artwork/main/packaging/logo.png",
+    "versions": [
+      {
+        "version": "2.1.1.0",
+        "changelog": "Добавлена установка и автоматическое обновление через репозиторий Jellyfin. Уточнена поддержка всех операционных систем Jellyfin.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.1.1/Cowabunga.Custom.Artwork_2.1.1.0.zip",
+        "checksum": "73a9fa9bf91bb5aeb84a5a3c313b4ad1",
+        "timestamp": "2026-08-01T10:40:08Z"
+      }
+    ]
+  }
+]

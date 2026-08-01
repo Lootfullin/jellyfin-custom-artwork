@@ -1,18 +1,18 @@
 {
   "description": "Берёт кастомные постеры и логотипы напрямую из приватного облака Cowabunga по WebDAV и подставляет их фильмам, сериалам, сезонам и коллекциям.",
   "category": "MoviesAndShows",
-  "timestamp": "2026-08-01T10:30:00.0000000Z",
+  "timestamp": "2026-08-01T10:40:08.0000000Z",
   "status": "Active",
   "guid": "6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1",
-  "changelog": "2.1.0: добавлен выбор хранилища. Изображения можно оставлять во внутреннем хранилище Jellyfin или безопасно синхронизировать в папки рядом с видеофайлами.",
+  "changelog": "2.1.1: добавлена установка и автоматическое обновление через репозиторий Jellyfin; уточнена поддержка всех операционных систем Jellyfin.",
   "imagePath": "logo.png",
-  "autoUpdate": false,
+  "autoUpdate": true,
   "name": "Cowabunga Custom Artwork",
   "assemblies": [
     "Jellyfin.Plugin.CustomArtwork.dll"
   ],
   "targetAbi": "10.11.0.0",
   "overview": "Кастомные обложки из приватного облака",
-  "version": "2.1.0.0",
+  "version": "2.1.1.0",
   "owner": "iMaks533"
 }

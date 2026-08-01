@@ -3,9 +3,9 @@
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.CustomArtwork</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.CustomArtwork</AssemblyName>
-    <Version>2.1.0.0</Version>
-    <AssemblyVersion>2.1.0.0</AssemblyVersion>
-    <FileVersion>2.1.0.0</FileVersion>
+    <Version>2.1.1.0</Version>
+    <AssemblyVersion>2.1.1.0</AssemblyVersion>
+    <FileVersion>2.1.1.0</FileVersion>
     <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">10.11.11</JellyfinVersion>
     <Description>Custom posters and logos from a private WebDAV cloud.</Description>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
