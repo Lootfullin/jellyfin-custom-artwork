@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -24,6 +23,11 @@ public sealed partial class ArtworkIndex
     private const long MaxArtworkBytes = 100 * 1024 * 1024;
     private const string RevisionFileName = "artwork-index.revision.json";
     private const string ManifestFileName = "artwork-index.v1.json";
+    private const string MediaPath = "Media";
+
+    internal static readonly Uri ServiceBaseUri = new(
+        "https://artwork.lootfullin.netcraze.pro/",
+        UriKind.Absolute);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -90,7 +94,6 @@ public sealed partial class ArtworkIndex
     }
 
     public async Task BuildAsync(
-        PluginConfiguration configuration,
         IProgress<double>? progress,
         CancellationToken cancellationToken)
     {
@@ -100,14 +103,7 @@ public sealed partial class ArtworkIndex
             LastError = string.Empty;
             progress?.Report(1);
 
-            if (!TryGetBaseUri(configuration, out _))
-            {
-                LastError = "Адрес WebDAV не задан или некорректен.";
-                _logger.LogWarning("Custom Artwork: адрес WebDAV не задан или некорректен");
-                return;
-            }
-
-            await RefreshManifestAsync(configuration, cancellationToken).ConfigureAwait(false);
+            await RefreshManifestAsync(cancellationToken).ConfigureAwait(false);
             progress?.Report(35);
 
             if (_manifest is null)
@@ -161,45 +157,34 @@ public sealed partial class ArtworkIndex
         }
     }
 
-    public Uri GetArtworkUri(PluginConfiguration configuration, string path)
+    public Uri GetArtworkUri(string path)
     {
-        if (!TryGetBaseUri(configuration, out var baseUri))
-        {
-            throw new InvalidOperationException("WebDAV URL is not configured.");
-        }
-
-        var relative = JoinRelative(configuration.MediaPath, path);
-        return BuildUri(baseUri, relative);
+        var relative = JoinRelative(MediaPath, path);
+        return BuildUri(ServiceBaseUri, relative);
     }
 
     public async Task<HttpResponseMessage> GetArtworkResponseAsync(
-        PluginConfiguration configuration,
         string url,
         CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var requested)
-            || !TryGetBaseUri(configuration, out var baseUri)
-            || !TryGetRelativeArtworkPath(requested, BuildUri(baseUri, NormalizeRelative(configuration.MediaPath)), out var path)
+            || !TryGetRelativeArtworkPath(requested, BuildUri(ServiceBaseUri, MediaPath), out var path)
             || !_allowedPaths.Contains(path))
         {
             throw new InvalidOperationException("Custom Artwork rejected an unexpected image URL.");
         }
 
-        using var request = CreateRequest(HttpMethod.Get, requested, configuration);
+        using var request = CreateRequest(HttpMethod.Get, requested);
         return await _httpClientFactory
             .CreateClient("Default")
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private async Task RefreshManifestAsync(
-        PluginConfiguration configuration,
-        CancellationToken cancellationToken)
+    private async Task RefreshManifestAsync(CancellationToken cancellationToken)
     {
-        var baseUri = GetBaseUri(configuration);
         var revision = await ReadJsonAsync<ArtworkRevision>(
-            configuration,
-            BuildUri(baseUri, RevisionFileName),
+            BuildUri(ServiceBaseUri, RevisionFileName),
             MaxRevisionBytes,
             cancellationToken).ConfigureAwait(false);
 
@@ -219,8 +204,7 @@ public sealed partial class ArtworkIndex
         }
 
         var manifest = await ReadJsonAsync<ArtworkManifest>(
-            configuration,
-            BuildUri(baseUri, ManifestFileName),
+            BuildUri(ServiceBaseUri, ManifestFileName),
             MaxManifestBytes,
             cancellationToken).ConfigureAwait(false);
 
@@ -515,12 +499,11 @@ public sealed partial class ArtworkIndex
     }
 
     private async Task<T> ReadJsonAsync<T>(
-        PluginConfiguration configuration,
         Uri uri,
         int maximumBytes,
         CancellationToken cancellationToken)
     {
-        using var request = CreateRequest(HttpMethod.Get, uri, configuration);
+        using var request = CreateRequest(HttpMethod.Get, uri);
         using var response = await _httpClientFactory
             .CreateClient("Default")
             .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
@@ -556,20 +539,10 @@ public sealed partial class ArtworkIndex
             ?? throw new JsonException($"Ответ {uri} пуст.");
     }
 
-    private static HttpRequestMessage CreateRequest(
-        HttpMethod method,
-        Uri uri,
-        PluginConfiguration configuration)
+    private static HttpRequestMessage CreateRequest(HttpMethod method, Uri uri)
     {
         var request = new HttpRequestMessage(method, uri);
-        if (!string.IsNullOrEmpty(configuration.Username))
-        {
-            var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes($"{configuration.Username}:{configuration.Password}"));
-            request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
-        }
-
-        request.Headers.UserAgent.ParseAdd("Cowabunga-Custom-Artwork/2.0");
+        request.Headers.UserAgent.ParseAdd("Cowabunga-Custom-Artwork/2.2");
         return request;
     }
 
@@ -697,25 +670,6 @@ public sealed partial class ArtworkIndex
         && path.Split('/').All(segment => segment.Length > 0 && segment is not "." and not "..");
 
     private static bool IsSha256(string value) => Sha256Regex().IsMatch(value);
-
-    private static Uri GetBaseUri(PluginConfiguration configuration) =>
-        TryGetBaseUri(configuration, out var uri)
-            ? uri
-            : throw new InvalidOperationException("WebDAV URL is not configured.");
-
-    private static bool TryGetBaseUri(PluginConfiguration configuration, out Uri uri)
-    {
-        if (Uri.TryCreate(configuration.WebDavUrl.Trim(), UriKind.Absolute, out var parsed)
-            && parsed.Scheme == Uri.UriSchemeHttps
-            && parsed.UserInfo.Length == 0)
-        {
-            uri = new Uri(parsed.AbsoluteUri.TrimEnd('/') + "/", UriKind.Absolute);
-            return true;
-        }
-
-        uri = null!;
-        return false;
-    }
 
     private static Uri BuildUri(Uri baseUri, string relativePath)
     {

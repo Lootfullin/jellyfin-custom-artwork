@@ -8,14 +8,6 @@ public sealed class PluginConfiguration : BasePluginConfiguration
 
     public const string MediaFolderStorage = "MediaFolder";
 
-    public string WebDavUrl { get; set; } = string.Empty;
-
-    public string Username { get; set; } = string.Empty;
-
-    public string Password { get; set; } = string.Empty;
-
-    public string MediaPath { get; set; } = "Media";
-
     public int RefreshIntervalMinutes { get; set; } = 5;
 
     public bool Posters { get; set; } = true;

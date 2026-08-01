@@ -46,14 +46,14 @@ public sealed class ArtworkImageProvider : IRemoteImageProvider, IImageProvider,
         CancellationToken cancellationToken)
     {
         var configuration = Plugin.Instance?.Configuration;
-        if (configuration is null || string.IsNullOrWhiteSpace(configuration.WebDavUrl))
+        if (configuration is null)
         {
             return Array.Empty<RemoteImageInfo>();
         }
 
         if (_index.IsStale(configuration.RefreshIntervalMinutes))
         {
-            await _index.BuildAsync(configuration, null, cancellationToken).ConfigureAwait(false);
+            await _index.BuildAsync(null, cancellationToken).ConfigureAwait(false);
         }
 
         if (configuration.StorageMode.Equals(
@@ -73,12 +73,12 @@ public sealed class ArtworkImageProvider : IRemoteImageProvider, IImageProvider,
         var images = new List<RemoteImageInfo>(2);
         if (configuration.Posters && artwork.Poster is not null)
         {
-            Add(images, configuration, artwork.Poster, ImageType.Primary);
+            Add(images, artwork.Poster, ImageType.Primary);
         }
 
         if (configuration.Logos && artwork.Logo is not null)
         {
-            Add(images, configuration, artwork.Logo, ImageType.Logo);
+            Add(images, artwork.Logo, ImageType.Logo);
         }
 
         return images;
@@ -86,20 +86,17 @@ public sealed class ArtworkImageProvider : IRemoteImageProvider, IImageProvider,
 
     public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
     {
-        var configuration = Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("Custom Artwork configuration is unavailable.");
-        return _index.GetArtworkResponseAsync(configuration, url, cancellationToken);
+        return _index.GetArtworkResponseAsync(url, cancellationToken);
     }
 
     private void Add(
         ICollection<RemoteImageInfo> images,
-        PluginConfiguration configuration,
         ArtworkManifestFile file,
         ImageType imageType)
     {
         try
         {
-            var url = _index.GetArtworkUri(configuration, file.Path).AbsoluteUri;
+            var url = _index.GetArtworkUri(file.Path).AbsoluteUri;
             images.Add(new RemoteImageInfo
             {
                 ProviderName = Name,

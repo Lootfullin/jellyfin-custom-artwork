@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/Lootfullin/jellyfin-custom-artwork/main/packaging/logo.png",
     "versions": [
       {
+        "version": "2.2.0.0",
+        "changelog": "Подключение к облаку настроено заранее. После установки больше не нужно вводить адрес, имя пользователя, пароль или папку.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.2.0/Cowabunga.Custom.Artwork_2.2.0.0.zip",
+        "checksum": "1de7f12e68ebc1a07d6e564ae14f585b",
+        "timestamp": "2026-08-01T11:44:14Z"
+      },
+      {
         "version": "2.1.1.0",
         "changelog": "Добавлена установка и автоматическое обновление через репозиторий Jellyfin. Уточнена поддержка всех операционных систем Jellyfin.",
         "targetAbi": "10.11.0.0",

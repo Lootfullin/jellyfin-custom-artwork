@@ -222,9 +222,9 @@ public sealed class ArtworkMediaWriter
             $".cowabunga-artwork-{Guid.NewGuid():N}.tmp");
         try
         {
-            var url = _index.GetArtworkUri(configuration, source.Path).AbsoluteUri;
+            var url = _index.GetArtworkUri(source.Path).AbsoluteUri;
             using var response = await _index
-                .GetArtworkResponseAsync(configuration, url, cancellationToken)
+                .GetArtworkResponseAsync(url, cancellationToken)
                 .ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
