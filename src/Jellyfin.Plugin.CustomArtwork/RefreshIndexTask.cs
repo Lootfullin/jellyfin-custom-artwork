@@ -50,7 +50,7 @@ public sealed class RefreshIndexTask : IScheduledTask
         }
 
         var configuration = plugin.Configuration;
-        await _index.BuildAsync(configuration, progress, cancellationToken).ConfigureAwait(false);
+        await _index.BuildAsync(progress, cancellationToken).ConfigureAwait(false);
 
         configuration.LastIndexedUtc = _index.BuiltUtc == DateTime.MinValue
             ? string.Empty

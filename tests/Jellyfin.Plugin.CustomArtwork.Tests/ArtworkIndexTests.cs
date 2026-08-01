@@ -54,6 +54,18 @@ public sealed class ArtworkIndexTests
     }
 
     [Fact]
+    public void ArtworkUri_UsesFixedCowabungaEndpoint()
+    {
+        var index = new ArtworkIndex(null!, null!, null!);
+
+        var result = index.GetArtworkUri("Shows/Sherlock/Season 01/poster.jpg");
+
+        Assert.Equal(
+            "https://artwork.lootfullin.netcraze.pro/Media/Shows/Sherlock/Season%2001/poster.jpg",
+            result.AbsoluteUri);
+    }
+
+    [Fact]
     public void ValidateManifest_AcceptsPublisherSchema()
     {
         var manifest = CreateManifest("Movies/Test/poster.jpg");
