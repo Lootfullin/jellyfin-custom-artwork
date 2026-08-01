@@ -46,7 +46,7 @@ provider и сохраняет их в своём локальном храни�
 2. Добавить репозиторий с любым удобным названием и адресом:
 
    ```text
-   https://raw.githubusercontent.com/Lootfullin/jellyfin-custom-artwork/main/manifest.json
+   https://raw.githubusercontent.com/Lootfullin/jellyfin-smart-resolver/main/manifest.json
    ```
 
 3. Открыть каталог модулей и установить `Cowabunga Custom Artwork`.
