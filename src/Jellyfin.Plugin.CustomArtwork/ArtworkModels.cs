@@ -45,6 +45,12 @@ internal sealed class ArtworkManifestFile
 
     [JsonPropertyName("season_number")]
     public int? SeasonNumber { get; set; }
+
+    [JsonPropertyName("tmdb_id")]
+    public int? TmdbId { get; set; }
+
+    [JsonPropertyName("collection_key")]
+    public string? CollectionKey { get; set; }
 }
 
 internal sealed class ArtworkSet
@@ -54,6 +60,8 @@ internal sealed class ArtworkSet
     public ArtworkManifestFile? Logo { get; set; }
 
     public string Fingerprint => $"{Poster?.Sha256}|{Logo?.Sha256}";
+
+    public string? CollectionKey => Poster?.CollectionKey ?? Logo?.CollectionKey;
 }
 
 internal readonly record struct ArtworkIdentity(string MediaType, string TmdbId, int? SeasonNumber)
@@ -73,6 +81,8 @@ internal sealed class ArtworkStateEntry
     public Guid ItemId { get; set; }
 
     public string Fingerprint { get; set; } = string.Empty;
+
+    public string? CollectionKey { get; set; }
 }
 
 internal sealed class ManagedMediaState

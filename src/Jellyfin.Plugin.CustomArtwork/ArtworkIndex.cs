@@ -220,6 +220,8 @@ public sealed partial class ArtworkIndex
     {
         var byRelease = BuildReleaseLookup(manifest.Files);
         var byCollection = BuildCollectionLookup(manifest.Files);
+        var byPublishedIdentity = BuildPublishedIdentityLookup(manifest.Files);
+        var byCustomCollectionKey = BuildCustomCollectionLookup(manifest.Files);
         var identities = new Dictionary<ArtworkIdentity, ArtworkSet>();
         var ambiguousIdentities = new HashSet<ArtworkIdentity>();
         var itemIds = new Dictionary<Guid, ArtworkSet>();
@@ -244,14 +246,22 @@ public sealed partial class ArtworkIndex
         {
             cancellationToken.ThrowIfCancellationRequested();
             var item = items[index];
-            var artwork = MatchItem(item, byRelease, byCollection);
+            var stateKey = $"item:{item.Id:N}";
+            previousState.Entries.TryGetValue(stateKey, out var previousEntry);
+            var artwork = MatchItem(
+                item,
+                manifest.SchemaVersion,
+                byRelease,
+                byCollection,
+                byPublishedIdentity,
+                byCustomCollectionKey,
+                previousEntry?.CollectionKey);
             if (artwork is null)
             {
                 continue;
             }
 
             itemIds[item.Id] = artwork;
-            var stateKey = $"item:{item.Id:N}";
             if (TryGetIdentity(item, out var identity))
             {
                 if (!ambiguousIdentities.Contains(identity))
@@ -273,6 +283,7 @@ public sealed partial class ArtworkIndex
             {
                 ItemId = item.Id,
                 Fingerprint = artwork.Fingerprint,
+                CollectionKey = artwork.CollectionKey,
             };
 
             if (!previousState.Entries.TryGetValue(stateKey, out var previous)
@@ -351,15 +362,36 @@ public sealed partial class ArtworkIndex
 
     private static ArtworkSet? MatchItem(
         BaseItem item,
+        int schemaVersion,
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byRelease,
-        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollection)
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollection,
+        IReadOnlyDictionary<ArtworkIdentity, List<ArtworkManifestFile>> byPublishedIdentity,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCustomCollectionKey,
+        string? previousCollectionKey)
     {
+        if (TryGetIdentity(item, out var identity)
+            && byPublishedIdentity.TryGetValue(identity, out var identityMatches))
+        {
+            return BuildArtworkSet(identityMatches);
+        }
+
         if (item is BoxSet)
         {
+            if (!string.IsNullOrWhiteSpace(previousCollectionKey)
+                && byCustomCollectionKey.TryGetValue(previousCollectionKey, out var stableMatches))
+            {
+                var stableArtwork = BuildArtworkSet(stableMatches);
+                if (stableArtwork is not null)
+                {
+                    return stableArtwork;
+                }
+            }
+
             return MatchCandidates(
                 CandidateNames(item).Select(CollectionKey),
                 byCollection,
-                file => file.Scope.Equals("collection", StringComparison.Ordinal));
+                file => file.Scope.Equals("collection", StringComparison.Ordinal)
+                    && (schemaVersion < 2 || file.TmdbId is null));
         }
 
         var scope = item switch
@@ -390,42 +422,93 @@ public sealed partial class ArtworkIndex
                 continue;
             }
 
-            var groups = matches
-                .Where(predicate)
+            var filtered = matches.Where(predicate).ToList();
+            var directories = filtered
                 .Where(file => !Path.GetFileName(file.Path).Contains("(alt)", StringComparison.OrdinalIgnoreCase))
-                .GroupBy(file => ParentPath(file.Path), StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            if (groups.Count != 1)
+                .Select(file => ParentPath(file.Path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(2)
+                .Count();
+            if (directories > 1)
             {
-                if (groups.Count > 1)
-                {
-                    return null;
-                }
-
-                continue;
+                return null;
             }
 
-            var result = new ArtworkSet();
-            foreach (var file in groups[0])
-            {
-                if (IsPoster(file.Path))
-                {
-                    result.Poster ??= file;
-                }
-                else if (IsLogo(file.Path))
-                {
-                    result.Logo ??= file;
-                }
-            }
-
-            if (result.Poster is not null || result.Logo is not null)
+            var result = BuildArtworkSet(filtered);
+            if (result is not null)
             {
                 return result;
             }
         }
 
         return null;
+    }
+
+    private static Dictionary<ArtworkIdentity, List<ArtworkManifestFile>> BuildPublishedIdentityLookup(
+        IEnumerable<ArtworkManifestFile> files)
+    {
+        var result = new Dictionary<ArtworkIdentity, List<ArtworkManifestFile>>();
+        foreach (var file in files.Where(file => file.Scope == "collection" && file.TmdbId is > 0))
+        {
+            var identity = new ArtworkIdentity(
+                "collection",
+                file.TmdbId!.Value.ToString(CultureInfo.InvariantCulture),
+                null);
+            if (!result.TryGetValue(identity, out var values))
+            {
+                values = [];
+                result[identity] = values;
+            }
+
+            values.Add(file);
+        }
+
+        return result;
+    }
+
+    private static Dictionary<string, List<ArtworkManifestFile>> BuildCustomCollectionLookup(
+        IEnumerable<ArtworkManifestFile> files)
+    {
+        var result = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal);
+        foreach (var file in files.Where(file => file.Scope == "collection" && file.CollectionKey is not null))
+        {
+            if (!result.TryGetValue(file.CollectionKey!, out var values))
+            {
+                values = [];
+                result[file.CollectionKey!] = values;
+            }
+
+            values.Add(file);
+        }
+
+        return result;
+    }
+
+    private static ArtworkSet? BuildArtworkSet(IEnumerable<ArtworkManifestFile> matches)
+    {
+        var groups = matches
+            .Where(file => !Path.GetFileName(file.Path).Contains("(alt)", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(file => ParentPath(file.Path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (groups.Count != 1)
+        {
+            return null;
+        }
+
+        var result = new ArtworkSet();
+        foreach (var file in groups[0])
+        {
+            if (IsPoster(file.Path))
+            {
+                result.Poster ??= file;
+            }
+            else if (IsLogo(file.Path))
+            {
+                result.Logo ??= file;
+            }
+        }
+
+        return result.Poster is not null || result.Logo is not null ? result : null;
     }
 
     private static IEnumerable<string> CandidateNames(BaseItem item)
@@ -542,13 +625,13 @@ public sealed partial class ArtworkIndex
     private static HttpRequestMessage CreateRequest(HttpMethod method, Uri uri)
     {
         var request = new HttpRequestMessage(method, uri);
-        request.Headers.UserAgent.ParseAdd("Cowabunga-Custom-Artwork/2.2");
+        request.Headers.UserAgent.ParseAdd("Cowabunga-Custom-Artwork/2.3");
         return request;
     }
 
     internal static void ValidateManifest(ArtworkManifest manifest, string expectedRevision)
     {
-        if (manifest.SchemaVersion != 1
+        if (manifest.SchemaVersion is not (1 or 2)
             || !manifest.Revision.Equals(expectedRevision, StringComparison.OrdinalIgnoreCase)
             || !IsSha256(manifest.Revision)
             || manifest.Files.Count > MaxManifestFiles)
@@ -565,7 +648,13 @@ public sealed partial class ArtworkIndex
                 || file.ReleaseNames.Count > 50
                 || file.ReleaseNames.Any(string.IsNullOrWhiteSpace)
                 || file.Scope is not ("item" or "series" or "season" or "collection")
-                || (file.Scope == "season" && file.SeasonNumber is null or < 0))
+                || (file.Scope == "season" && file.SeasonNumber is null or < 0)
+                || (file.TmdbId is <= 0)
+                || (file.CollectionKey is not null && !CustomCollectionKeyRegex().IsMatch(file.CollectionKey))
+                || (manifest.SchemaVersion == 2
+                    && file.Scope == "collection"
+                    && ((file.TmdbId is not null) == (file.CollectionKey is not null)))
+                || (file.Scope != "collection" && (file.TmdbId is not null || file.CollectionKey is not null)))
             {
                 throw new InvalidDataException($"Некорректная запись artwork: {file.Path}");
             }
@@ -635,8 +724,21 @@ public sealed partial class ArtworkIndex
     internal static string ReleaseKey(string name) =>
         QualityTagRegex().Replace(name, string.Empty).Trim().ToLowerInvariant();
 
-    internal static string CollectionKey(string name) =>
-        NonCollectionCharacterRegex().Replace(name.ToLowerInvariant(), string.Empty);
+    internal static string CollectionKey(string name)
+    {
+        var normalized = name.ToLowerInvariant();
+        var latin = normalized.Count(character => character is >= 'a' and <= 'z');
+        var cyrillic = normalized.Count(character => character is >= 'а' and <= 'я' or 'ё');
+        if (latin > cyrillic)
+        {
+            normalized = normalized
+                .Replace('а', 'a').Replace('в', 'b').Replace('с', 'c').Replace('е', 'e')
+                .Replace('к', 'k').Replace('м', 'm').Replace('н', 'h').Replace('о', 'o')
+                .Replace('р', 'p').Replace('т', 't').Replace('х', 'x');
+        }
+
+        return NonCollectionCharacterRegex().Replace(normalized, string.Empty);
+    }
 
     private static bool IsPoster(string path)
     {
@@ -729,4 +831,7 @@ public sealed partial class ArtworkIndex
 
     [GeneratedRegex(@"^[0-9a-fA-F]{64}$", RegexOptions.CultureInvariant)]
     private static partial Regex Sha256Regex();
+
+    [GeneratedRegex(@"^[a-z0-9]{1,200}$", RegexOptions.CultureInvariant)]
+    private static partial Regex CustomCollectionKeyRegex();
 }

@@ -17,18 +17,21 @@ public sealed class RefreshIndexTask : IScheduledTask
     private readonly IProviderManager _providerManager;
     private readonly IFileSystem _fileSystem;
     private readonly ILogger<RefreshIndexTask> _logger;
+    private readonly ArtworkLibraryConfigurator _libraryConfigurator;
 
     public RefreshIndexTask(
         ArtworkIndex index,
         ArtworkMediaWriter mediaWriter,
         IProviderManager providerManager,
         IFileSystem fileSystem,
+        ArtworkLibraryConfigurator libraryConfigurator,
         ILogger<RefreshIndexTask> logger)
     {
         _index = index;
         _mediaWriter = mediaWriter;
         _providerManager = providerManager;
         _fileSystem = fileSystem;
+        _libraryConfigurator = libraryConfigurator;
         _logger = logger;
     }
 
@@ -50,6 +53,7 @@ public sealed class RefreshIndexTask : IScheduledTask
         }
 
         var configuration = plugin.Configuration;
+        _libraryConfigurator.Apply();
         await _index.BuildAsync(progress, cancellationToken).ConfigureAwait(false);
 
         configuration.LastIndexedUtc = _index.BuiltUtc == DateTime.MinValue
