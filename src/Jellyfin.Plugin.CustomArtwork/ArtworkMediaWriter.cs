@@ -62,7 +62,8 @@ public sealed class ArtworkMediaWriter
                     PluginConfiguration.MediaFolderStorage,
                     StringComparison.Ordinal)
                 || state.Posters != configuration.Posters
-                || state.Logos != configuration.Logos;
+                || state.Logos != configuration.Logos
+                || state.OverwriteExistingMediaFiles != configuration.OverwriteExistingMediaFiles;
             var itemIds = processAll
                 ? _index.Matches.Keys.ToHashSet()
                 : _index.ChangedItemIds.ToHashSet();
@@ -81,6 +82,7 @@ public sealed class ArtworkMediaWriter
                     state.StorageMode = PluginConfiguration.MediaFolderStorage;
                     state.Posters = configuration.Posters;
                     state.Logos = configuration.Logos;
+                    state.OverwriteExistingMediaFiles = configuration.OverwriteExistingMediaFiles;
                     SaveState(state);
                 }
 
@@ -148,6 +150,7 @@ public sealed class ArtworkMediaWriter
             state.StorageMode = PluginConfiguration.MediaFolderStorage;
             state.Posters = configuration.Posters;
             state.Logos = configuration.Logos;
+            state.OverwriteExistingMediaFiles = configuration.OverwriteExistingMediaFiles;
             SaveState(state);
             return refreshed;
         }
@@ -206,14 +209,25 @@ public sealed class ArtworkMediaWriter
 
             overwriteManagedFile = true;
 
-            if (managed is null
-                || !managed.Sha256.Equals(currentHash, StringComparison.OrdinalIgnoreCase))
+            if (!CanOverwriteExistingFile(
+                    configuration.OverwriteExistingMediaFiles,
+                    managed,
+                    currentHash))
             {
                 state.Files.Remove(destination);
                 _logger.LogWarning(
                     "Custom Artwork: локальный файл {Path} не перезаписан, потому что он создан или изменён не плагином",
                     destination);
                 return false;
+            }
+
+            if (managed is null
+                || !managed.Sha256.Equals(currentHash, StringComparison.OrdinalIgnoreCase))
+            {
+                state.Files.Remove(destination);
+                _logger.LogInformation(
+                    "Custom Artwork: локальный файл {Path} заменяется изображением из облака согласно настройке",
+                    destination);
             }
         }
 
@@ -381,6 +395,14 @@ public sealed class ArtworkMediaWriter
 
     internal static bool DeleteIfUnchanged(string path, ManagedMediaFile managed)
         => DeleteManagedFile(path, managed) == ManagedDeleteResult.Deleted;
+
+    internal static bool CanOverwriteExistingFile(
+        bool overwriteExistingMediaFiles,
+        ManagedMediaFile? managed,
+        string currentHash)
+        => overwriteExistingMediaFiles
+            || managed is not null
+            && managed.Sha256.Equals(currentHash, StringComparison.OrdinalIgnoreCase);
 
     private static ManagedDeleteResult DeleteManagedFile(string path, ManagedMediaFile managed)
     {

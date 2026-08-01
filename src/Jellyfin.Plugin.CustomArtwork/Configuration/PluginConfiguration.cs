@@ -16,6 +16,8 @@ public sealed class PluginConfiguration : BasePluginConfiguration
 
     public string StorageMode { get; set; } = JellyfinStorage;
 
+    public bool OverwriteExistingMediaFiles { get; set; }
+
     public string LastIndexedUtc { get; set; } = string.Empty;
 
     public int LastIndexedCount { get; set; }
