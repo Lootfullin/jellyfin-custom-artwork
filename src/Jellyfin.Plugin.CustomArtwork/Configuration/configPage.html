@@ -36,8 +36,21 @@
                     </select>
                     <div class="fieldDescription">
                         Во втором режиме Jellyfin должен иметь право записи в папки медиатеки.
-                        Существующие постеры и логотипы, созданные не этим плагином, не перезаписываются.
+                        По умолчанию существующие постеры и логотипы, созданные не этим плагином,
+                        не перезаписываются.
                         Для коллекций всегда используется внутреннее хранилище Jellyfin.
+                    </div>
+                </div>
+
+                <div id="OverwriteExistingMediaFilesContainer"
+                     class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="OverwriteExistingMediaFiles" />
+                        <span>Заменять существующие локальные постеры и логотипы</span>
+                    </label>
+                    <div class="fieldDescription">
+                        Разрешает плагину перезаписывать файлы постеров и логотипов в папках медиатеки,
+                        даже если они были созданы не этим плагином. Без галочки такие файлы сохраняются.
                     </div>
                 </div>
 
@@ -66,11 +79,20 @@
             var pluginId = '6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1';
             var page = document.querySelector('#CustomArtworkConfigPage');
 
+            function updateOverwriteVisibility() {
+                var mediaFolderSelected = page.querySelector('#StorageMode').value === 'MediaFolder';
+                page.querySelector('#OverwriteExistingMediaFilesContainer').style.display =
+                    mediaFolderSelected ? '' : 'none';
+            }
+
             function load(config) {
                 page.querySelector('#RefreshIntervalMinutes').value = config.RefreshIntervalMinutes || 5;
                 page.querySelector('#Posters').checked = config.Posters !== false;
                 page.querySelector('#Logos').checked = config.Logos !== false;
                 page.querySelector('#StorageMode').value = config.StorageMode || 'Jellyfin';
+                page.querySelector('#OverwriteExistingMediaFiles').checked =
+                    config.OverwriteExistingMediaFiles === true;
+                updateOverwriteVisibility();
 
                 var revision = config.LastRevision ? config.LastRevision.substring(0, 12) : 'нет';
                 page.querySelector('#IndexState').textContent = config.LastIndexedUtc
@@ -107,6 +129,8 @@
                 fill();
             }
 
+            page.querySelector('#StorageMode').addEventListener('change', updateOverwriteVisibility);
+
             page.querySelector('#CustomArtworkConfigForm').addEventListener('submit', function (event) {
                 event.preventDefault();
                 Dashboard.showLoadingMsg();
@@ -116,6 +140,8 @@
                     config.Posters = page.querySelector('#Posters').checked;
                     config.Logos = page.querySelector('#Logos').checked;
                     config.StorageMode = page.querySelector('#StorageMode').value;
+                    config.OverwriteExistingMediaFiles =
+                        page.querySelector('#OverwriteExistingMediaFiles').checked;
                     config.LastError = '';
 
                     ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {

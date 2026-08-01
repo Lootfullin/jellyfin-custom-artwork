@@ -93,6 +93,8 @@ internal sealed class ManagedMediaState
 
     public bool Logos { get; set; } = true;
 
+    public bool OverwriteExistingMediaFiles { get; set; }
+
     public Dictionary<string, ManagedMediaFile> Files { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 

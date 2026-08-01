@@ -269,6 +269,18 @@ public sealed class ArtworkIndexTests
         }
     }
 
+    [Fact]
+    public void ExistingMediaFileOverwrite_RequiresSettingForUnmanagedOrModifiedFiles()
+    {
+        var managed = new ManagedMediaFile { Sha256 = "original" };
+
+        Assert.False(ArtworkMediaWriter.CanOverwriteExistingFile(false, null, "local"));
+        Assert.False(ArtworkMediaWriter.CanOverwriteExistingFile(false, managed, "modified"));
+        Assert.True(ArtworkMediaWriter.CanOverwriteExistingFile(false, managed, "original"));
+        Assert.True(ArtworkMediaWriter.CanOverwriteExistingFile(true, null, "local"));
+        Assert.True(ArtworkMediaWriter.CanOverwriteExistingFile(true, managed, "modified"));
+    }
+
     private static ArtworkManifest CreateManifest(string path) => new()
     {
         SchemaVersion = 1,
