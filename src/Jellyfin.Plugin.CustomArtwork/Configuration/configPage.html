@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Cowabunga Custom Artwork</title>
+</head>
+<body>
+<div id="CustomArtworkConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="CustomArtworkConfigForm">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Приватное облако</h2>
+                    <p class="fieldDescription">
+                        Плагин работает напрямую с WebDAV и не обращается ни к сайту Cowabunga,
+                        ни к Яндекс.Диску. Используйте отдельного пользователя только для чтения.
+                    </p>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="WebDavUrl">Адрес WebDAV</label>
+                    <input is="emby-input" type="url" id="WebDavUrl" name="WebDavUrl" required
+                           placeholder="https://example.net/webdav/" />
+                    <div class="fieldDescription">
+                        Корень, в котором лежат artwork-index.revision.json,
+                        artwork-index.v1.json и папка Media.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="Username">Пользователь</label>
+                    <input is="emby-input" type="text" id="Username" name="Username"
+                           autocomplete="username" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="Password">Пароль</label>
+                    <input is="emby-input" type="password" id="Password" name="Password"
+                           autocomplete="current-password" />
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="MediaPath">Папка изображений</label>
+                    <input is="emby-input" type="text" id="MediaPath" name="MediaPath"
+                           placeholder="Media" />
+                    <div class="fieldDescription">
+                        Обычно Media. Путь считается от указанного корня WebDAV.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="RefreshIntervalMinutes">
+                        Проверять изменения, минут
+                    </label>
+                    <input is="emby-input" type="number" id="RefreshIntervalMinutes"
+                           name="RefreshIntervalMinutes" min="1" max="1440" />
+                    <div class="fieldDescription">
+                        Скачивается только файл ревизии размером в несколько десятков байт.
+                        Полный индекс загружается лишь после изменения ревизии.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="Posters" />
+                        <span>Подставлять постеры</span>
+                    </label>
+                </div>
+
+                <div class="selectContainer">
+                    <label class="selectLabel" for="StorageMode">Где хранить загруженные изображения</label>
+                    <select is="emby-select" id="StorageMode" name="StorageMode" class="emby-select-withcolor emby-select">
+                        <option value="Jellyfin">Хранить в медиатеке Jellyfin</option>
+                        <option value="MediaFolder">Хранить в папке с видеофайлом</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Во втором режиме Jellyfin должен иметь право записи в папки медиатеки.
+                        Существующие постеры и логотипы, созданные не этим плагином, не перезаписываются.
+                        Для коллекций всегда используется внутреннее хранилище Jellyfin.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="Logos" />
+                        <span>Подставлять логотипы</span>
+                    </label>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Состояние индекса</h3>
+                    <div id="IndexState" class="fieldDescription"></div>
+                    <div id="IndexError" class="fieldDescription" style="color: var(--error-color, #ff6b6b);"></div>
+                </div>
+
+                <button is="emby-button" type="submit" class="raised button-submit block">
+                    <span>Сохранить и проверить</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1';
+            var page = document.querySelector('#CustomArtworkConfigPage');
+
+            function load(config) {
+                page.querySelector('#WebDavUrl').value = config.WebDavUrl || '';
+                page.querySelector('#Username').value = config.Username || '';
+                page.querySelector('#Password').value = config.Password || '';
+                page.querySelector('#MediaPath').value = config.MediaPath || 'Media';
+                page.querySelector('#RefreshIntervalMinutes').value = config.RefreshIntervalMinutes || 5;
+                page.querySelector('#Posters').checked = config.Posters !== false;
+                page.querySelector('#Logos').checked = config.Logos !== false;
+                page.querySelector('#StorageMode').value = config.StorageMode || 'Jellyfin';
+
+                var revision = config.LastRevision ? config.LastRevision.substring(0, 12) : 'нет';
+                page.querySelector('#IndexState').textContent = config.LastIndexedUtc
+                    ? 'Последняя проверка: ' + config.LastIndexedUtc
+                        + '. Сопоставлено позиций: ' + config.LastIndexedCount
+                        + '. Ревизия: ' + revision + '.'
+                    : 'Индекс ещё не загружен.';
+                page.querySelector('#IndexError').textContent = config.LastError
+                    ? 'Последняя ошибка: ' + config.LastError
+                    : '';
+            }
+
+            function fill() {
+                ApiClient.getPluginConfiguration(pluginId).then(load);
+            }
+
+            function startRefresh() {
+                if (!ApiClient.getScheduledTasks) {
+                    return;
+                }
+
+                ApiClient.getScheduledTasks().then(function (tasks) {
+                    var task = (tasks || []).filter(function (entry) {
+                        return entry.Key === 'CustomArtworkRefreshIndex';
+                    })[0];
+                    if (task && task.State === 'Idle') {
+                        ApiClient.startScheduledTask(task.Id);
+                    }
+                });
+            }
+
+            page.addEventListener('pageshow', fill);
+            if (window.ApiClient) {
+                fill();
+            }
+
+            page.querySelector('#CustomArtworkConfigForm').addEventListener('submit', function (event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.WebDavUrl = page.querySelector('#WebDavUrl').value.trim();
+                    config.Username = page.querySelector('#Username').value.trim();
+                    config.Password = page.querySelector('#Password').value;
+                    config.MediaPath = page.querySelector('#MediaPath').value.trim() || 'Media';
+                    config.RefreshIntervalMinutes =
+                        parseInt(page.querySelector('#RefreshIntervalMinutes').value, 10) || 5;
+                    config.Posters = page.querySelector('#Posters').checked;
+                    config.Logos = page.querySelector('#Logos').checked;
+                    config.StorageMode = page.querySelector('#StorageMode').value;
+                    config.LastError = '';
+
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                        startRefresh();
+                    });
+                });
+                return false;
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>
