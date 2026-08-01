@@ -3,10 +3,34 @@ namespace Jellyfin.Plugin.CustomArtwork.Tests;
 using System.Security.Cryptography;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.Entities;
 
 public sealed class ArtworkIndexTests
 {
     private const string Revision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    [Fact]
+    public void LibraryConfiguration_PutsCustomArtworkBeforeOtherCollectionProviders()
+    {
+        var options = new LibraryOptions
+        {
+            TypeOptions =
+            [
+                new TypeOptions
+                {
+                    Type = "BoxSet",
+                    ImageFetchers = ["Choose your Meta! — изображения", "TheMovieDb"],
+                    ImageFetcherOrder = ["Choose your Meta! — изображения", "TheMovieDb"],
+                },
+            ],
+        };
+
+        Assert.True(ArtworkLibraryConfigurator.Apply(options, CollectionTypeOptions.boxsets));
+        var boxSet = Assert.Single(options.TypeOptions);
+        Assert.Equal("Cowabunga Custom Artwork", boxSet.ImageFetcherOrder[0]);
+        Assert.False(ArtworkLibraryConfigurator.Apply(options, CollectionTypeOptions.boxsets));
+    }
 
     [Theory]
     [InlineData("Sherlock (2010) [S01 UHD DR]", "sherlock (2010)")]
@@ -71,6 +95,59 @@ public sealed class ArtworkIndexTests
         var manifest = CreateManifest("Movies/Test/poster.jpg");
 
         ArtworkIndex.ValidateManifest(manifest, Revision);
+    }
+
+    [Fact]
+    public void CollectionKey_RepairsCyrillicLookalikeInsideLatinName()
+    {
+        Assert.Equal("beetlejuicecollection", ArtworkIndex.CollectionKey("Beetlejuice Сollection"));
+    }
+
+    [Fact]
+    public void ValidateManifest_AcceptsSchemaTwoCollectionWithTmdbId()
+    {
+        var file = CreateFile("Collections/Star Wars/poster.jpg", "collection");
+        file.TmdbId = 10;
+        var manifest = new ArtworkManifest
+        {
+            SchemaVersion = 2,
+            Revision = Revision,
+            GeneratedAt = "2026-08-01T00:00:00Z",
+            Files = [file],
+        };
+
+        ArtworkIndex.ValidateManifest(manifest, Revision);
+    }
+
+    [Fact]
+    public void ValidateManifest_AllowsSchemaTwoCustomCollectionWithoutTmdbId()
+    {
+        var file = CreateFile("Collections/Unknown/poster.jpg", "collection");
+        file.CollectionKey = "phase16";
+        var manifest = new ArtworkManifest
+        {
+            SchemaVersion = 2,
+            Revision = Revision,
+            GeneratedAt = "2026-08-01T00:00:00Z",
+            Files = [file],
+        };
+
+        ArtworkIndex.ValidateManifest(manifest, Revision);
+    }
+
+
+    [Fact]
+    public void ValidateManifest_RejectsSchemaTwoCollectionWithoutIdentity()
+    {
+        var manifest = new ArtworkManifest
+        {
+            SchemaVersion = 2,
+            Revision = Revision,
+            GeneratedAt = "2026-08-01T00:00:00Z",
+            Files = [CreateFile("Collections/Unknown/poster.jpg", "collection")],
+        };
+
+        Assert.Throws<InvalidDataException>(() => ArtworkIndex.ValidateManifest(manifest, Revision));
     }
 
     [Fact]

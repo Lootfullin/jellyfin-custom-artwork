@@ -391,8 +391,12 @@ public sealed class ArtworkMediaWriter
 
         try
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var currentHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            string currentHash;
+            using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                currentHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+            }
+
             if (!currentHash.Equals(managed.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 return ManagedDeleteResult.Relinquished;
