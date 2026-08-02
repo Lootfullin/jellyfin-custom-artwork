@@ -510,17 +510,6 @@ public sealed partial class ArtworkIndex
             }
 
             var filtered = matches.Where(predicate).ToList();
-            var directories = filtered
-                .Where(file => !Path.GetFileName(file.Path).Contains("(alt)", StringComparison.OrdinalIgnoreCase))
-                .Select(file => ParentPath(file.Path))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(2)
-                .Count();
-            if (directories > 1)
-            {
-                return null;
-            }
-
             var result = BuildArtworkSet(filtered);
             if (result is not null)
             {
@@ -576,27 +565,61 @@ public sealed partial class ArtworkIndex
         var groups = matches
             .Where(file => !Path.GetFileName(file.Path).Contains("(alt)", StringComparison.OrdinalIgnoreCase))
             .GroupBy(file => ParentPath(file.Path), StringComparer.OrdinalIgnoreCase)
+            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        if (groups.Count != 1)
+        if (groups.Count == 0)
         {
             return null;
         }
 
-        var result = new ArtworkSet();
-        foreach (var file in groups[0])
+        var selected = new ArtworkSet();
+        var hasSelectedDirectory = false;
+        foreach (var group in groups)
         {
-            if (IsPoster(file.Path))
+            var candidate = new ArtworkSet();
+            foreach (var file in group)
             {
-                result.Poster ??= file;
+                if (IsPoster(file.Path))
+                {
+                    candidate.Poster ??= file;
+                }
+                else if (IsLogo(file.Path))
+                {
+                    candidate.Logo ??= file;
+                }
             }
-            else if (IsLogo(file.Path))
+
+            if (candidate.Poster is null && candidate.Logo is null)
             {
-                result.Logo ??= file;
+                continue;
             }
+
+            if (hasSelectedDirectory
+                && HasConflictingArtwork(selected.Poster, candidate.Poster))
+            {
+                return null;
+            }
+
+            if (hasSelectedDirectory
+                && HasConflictingArtwork(selected.Logo, candidate.Logo))
+            {
+                return null;
+            }
+
+            selected.Poster ??= candidate.Poster;
+            selected.Logo ??= candidate.Logo;
+            hasSelectedDirectory = true;
         }
 
-        return result.Poster is not null || result.Logo is not null ? result : null;
+        return hasSelectedDirectory ? selected : null;
     }
+
+    private static bool HasConflictingArtwork(
+        ArtworkManifestFile? selected,
+        ArtworkManifestFile? candidate) =>
+        selected is not null
+        && candidate is not null
+        && !selected.Sha256.Equals(candidate.Sha256, StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<string> CandidateNames(BaseItem item)
     {
