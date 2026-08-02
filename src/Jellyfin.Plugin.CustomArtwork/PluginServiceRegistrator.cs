@@ -11,5 +11,6 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<ArtworkIndex>();
         serviceCollection.AddSingleton<ArtworkMediaWriter>();
         serviceCollection.AddSingleton<ArtworkLibraryConfigurator>();
+        serviceCollection.AddSingleton<CollectionArtworkRetryTracker>();
     }
 }

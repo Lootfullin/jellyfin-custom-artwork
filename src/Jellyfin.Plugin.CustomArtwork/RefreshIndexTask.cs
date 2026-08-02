@@ -18,6 +18,7 @@ public sealed class RefreshIndexTask : IScheduledTask
     private readonly IFileSystem _fileSystem;
     private readonly ILogger<RefreshIndexTask> _logger;
     private readonly ArtworkLibraryConfigurator _libraryConfigurator;
+    private readonly CollectionArtworkRetryTracker _collectionRetryTracker;
 
     public RefreshIndexTask(
         ArtworkIndex index,
@@ -25,6 +26,7 @@ public sealed class RefreshIndexTask : IScheduledTask
         IProviderManager providerManager,
         IFileSystem fileSystem,
         ArtworkLibraryConfigurator libraryConfigurator,
+        CollectionArtworkRetryTracker collectionRetryTracker,
         ILogger<RefreshIndexTask> logger)
     {
         _index = index;
@@ -32,6 +34,7 @@ public sealed class RefreshIndexTask : IScheduledTask
         _providerManager = providerManager;
         _fileSystem = fileSystem;
         _libraryConfigurator = libraryConfigurator;
+        _collectionRetryTracker = collectionRetryTracker;
         _logger = logger;
     }
 
@@ -71,7 +74,14 @@ public sealed class RefreshIndexTask : IScheduledTask
             mediaChanges = await _mediaWriter.ApplyAsync(configuration, cancellationToken).ConfigureAwait(false);
         }
 
-        RequeueChangedItems(_index.ChangedItemIds.Concat(mediaChanges));
+        var collectionRetries = await _collectionRetryTracker.GetDueRetriesAsync(
+            _index.Matches,
+            _index.ChangedItemIds,
+            configuration.Posters,
+            configuration.Logos,
+            cancellationToken).ConfigureAwait(false);
+
+        RequeueChangedItems(_index.ChangedItemIds.Concat(mediaChanges).Concat(collectionRetries));
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
