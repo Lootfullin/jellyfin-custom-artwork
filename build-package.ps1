@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = '2.3.5.0',
+    [string]$Version = '2.4.0.0',
     [string]$DotnetPath
 )
 

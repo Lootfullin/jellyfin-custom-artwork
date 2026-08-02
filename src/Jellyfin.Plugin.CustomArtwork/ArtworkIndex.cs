@@ -244,6 +244,7 @@ public sealed partial class ArtworkIndex
         var byRelease = BuildReleaseLookup(manifest.Files);
         var byCollection = BuildCollectionLookup(manifest.Files);
         var byPublishedIdentity = BuildPublishedIdentityLookup(manifest.Files);
+        var byCollectionPart = BuildCollectionPartLookup(manifest.Files);
         var byCustomCollectionKey = BuildCustomCollectionLookup(manifest.Files);
         var identities = new Dictionary<ArtworkIdentity, ArtworkSet>();
         var ambiguousIdentities = new HashSet<ArtworkIdentity>();
@@ -279,10 +280,10 @@ public sealed partial class ArtworkIndex
             previousState.Entries.TryGetValue(stateKey, out var previousEntry);
             var artwork = MatchItem(
                 item,
-                manifest.SchemaVersion,
                 byRelease,
                 byCollection,
                 byPublishedIdentity,
+                byCollectionPart,
                 byCustomCollectionKey,
                 previousEntry?.CollectionKey);
             if (artwork is null)
@@ -449,19 +450,13 @@ public sealed partial class ArtworkIndex
 
     private static ArtworkSet? MatchItem(
         BaseItem item,
-        int schemaVersion,
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byRelease,
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollection,
         IReadOnlyDictionary<ArtworkIdentity, List<ArtworkManifestFile>> byPublishedIdentity,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollectionPart,
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCustomCollectionKey,
         string? previousCollectionKey)
     {
-        if (TryGetIdentity(item, out var identity)
-            && byPublishedIdentity.TryGetValue(identity, out var identityMatches))
-        {
-            return BuildArtworkSet(identityMatches);
-        }
-
         if (item is BoxSet)
         {
             if (!string.IsNullOrWhiteSpace(previousCollectionKey)
@@ -474,11 +469,31 @@ public sealed partial class ArtworkIndex
                 }
             }
 
-            return MatchCandidates(
+            var nameArtwork = MatchCandidates(
                 CandidateNames(item).Select(CollectionKey),
                 byCollection,
-                file => file.Scope.Equals("collection", StringComparison.Ordinal)
-                    && (schemaVersion < 2 || file.TmdbId is null));
+                file => file.Scope.Equals("collection", StringComparison.Ordinal));
+            if (nameArtwork is not null)
+            {
+                return nameArtwork;
+            }
+
+            var memberArtwork = MatchCollectionMembers((BoxSet)item, byCollectionPart);
+            if (memberArtwork is not null)
+            {
+                return memberArtwork;
+            }
+
+            return TryGetIdentity(item, out var collectionIdentity)
+                && byPublishedIdentity.TryGetValue(collectionIdentity, out var collectionIdentityMatches)
+                    ? BuildArtworkSet(collectionIdentityMatches)
+                    : null;
+        }
+
+        if (TryGetIdentity(item, out var identity)
+            && byPublishedIdentity.TryGetValue(identity, out var identityMatches))
+        {
+            return BuildArtworkSet(identityMatches);
         }
 
         var scope = item switch
@@ -520,16 +535,28 @@ public sealed partial class ArtworkIndex
         return null;
     }
 
-    private static Dictionary<ArtworkIdentity, List<ArtworkManifestFile>> BuildPublishedIdentityLookup(
+    internal static Dictionary<ArtworkIdentity, List<ArtworkManifestFile>> BuildPublishedIdentityLookup(
         IEnumerable<ArtworkManifestFile> files)
     {
         var result = new Dictionary<ArtworkIdentity, List<ArtworkManifestFile>>();
-        foreach (var file in files.Where(file => file.Scope == "collection" && file.TmdbId is > 0))
+        foreach (var file in files.Where(file => file.TmdbId is > 0))
         {
+            var mediaType = file.Scope switch
+            {
+                "item" => "movie",
+                "series" or "season" => "tv",
+                "collection" => "collection",
+                _ => string.Empty,
+            };
+            if (mediaType.Length == 0)
+            {
+                continue;
+            }
+
             var identity = new ArtworkIdentity(
-                "collection",
+                mediaType,
                 file.TmdbId!.Value.ToString(CultureInfo.InvariantCulture),
-                null);
+                file.Scope == "season" ? file.SeasonNumber : null);
             if (!result.TryGetValue(identity, out var values))
             {
                 values = [];
@@ -540,6 +567,78 @@ public sealed partial class ArtworkIndex
         }
 
         return result;
+    }
+
+    private static Dictionary<string, List<ArtworkManifestFile>> BuildCollectionPartLookup(
+        IEnumerable<ArtworkManifestFile> files)
+    {
+        var result = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal);
+        foreach (var file in files.Where(file => file.Scope == "collection"))
+        {
+            foreach (var partId in file.CollectionPartTmdbIds.Distinct())
+            {
+                AddLookup(result, partId.ToString(CultureInfo.InvariantCulture), file);
+            }
+        }
+
+        return result;
+    }
+
+    private static ArtworkSet? MatchCollectionMembers(
+        BoxSet collection,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollectionPart)
+    {
+        var memberIds = collection.GetLinkedChildren()
+            .OfType<Movie>()
+            .Select(movie => movie.GetProviderId(MetadataProvider.Tmdb))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToArray();
+        return MatchCollectionMemberIds(memberIds, byCollectionPart);
+    }
+
+    internal static ArtworkSet? MatchCollectionMemberIds(
+        IEnumerable<string> memberTmdbIds,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollectionPart)
+    {
+        var memberIds = memberTmdbIds.Distinct(StringComparer.Ordinal).ToArray();
+        if (memberIds.Length == 0)
+        {
+            return null;
+        }
+
+        var scores = new Dictionary<string, (int Score, List<ArtworkManifestFile> Files)>(StringComparer.Ordinal);
+        foreach (var memberId in memberIds)
+        {
+            if (!byCollectionPart.TryGetValue(memberId, out var matches))
+            {
+                continue;
+            }
+
+            foreach (var group in matches.GroupBy(file =>
+                         file.TmdbId?.ToString(CultureInfo.InvariantCulture)
+                         ?? file.CollectionKey
+                         ?? ParentPath(file.Path), StringComparer.Ordinal))
+            {
+                if (!scores.TryGetValue(group.Key, out var score))
+                {
+                    score = (0, []);
+                }
+
+                score.Score++;
+                score.Files.AddRange(group);
+                scores[group.Key] = score;
+            }
+        }
+
+        if (scores.Count == 0)
+        {
+            return null;
+        }
+
+        var bestScore = scores.Values.Max(value => value.Score);
+        var best = scores.Values.Where(value => value.Score == bestScore).ToArray();
+        return best.Length == 1 ? BuildArtworkSet(best[0].Files) : null;
     }
 
     private static Dictionary<string, List<ArtworkManifestFile>> BuildCustomCollectionLookup(
@@ -577,7 +676,7 @@ public sealed partial class ArtworkIndex
         foreach (var group in groups)
         {
             var candidate = new ArtworkSet();
-            foreach (var file in group)
+            foreach (var file in group.OrderByDescending(ArtworkFilePriority).ThenBy(file => file.Path, StringComparer.OrdinalIgnoreCase))
             {
                 if (IsPoster(file.Path))
                 {
@@ -612,6 +711,15 @@ public sealed partial class ArtworkIndex
         }
 
         return hasSelectedDirectory ? selected : null;
+    }
+
+    private static int ArtworkFilePriority(ArtworkManifestFile file)
+    {
+        var name = Path.GetFileName(file.Path);
+        return name.Contains("-poster.", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("-clearlogo.", StringComparison.OrdinalIgnoreCase)
+            ? 2
+            : 1;
     }
 
     private static bool HasConflictingArtwork(
@@ -761,11 +869,13 @@ public sealed partial class ArtworkIndex
                 || file.Scope is not ("item" or "series" or "season" or "collection")
                 || (file.Scope == "season" && file.SeasonNumber is null or < 0)
                 || (file.TmdbId is <= 0)
+                || file.CollectionPartTmdbIds.Any(id => id <= 0)
+                || (file.Scope != "collection" && file.CollectionPartTmdbIds.Count > 0)
                 || (file.CollectionKey is not null && !CustomCollectionKeyRegex().IsMatch(file.CollectionKey))
                 || (manifest.SchemaVersion == 2
                     && file.Scope == "collection"
                     && ((file.TmdbId is not null) == (file.CollectionKey is not null)))
-                || (file.Scope != "collection" && (file.TmdbId is not null || file.CollectionKey is not null)))
+                || (file.Scope != "collection" && file.CollectionKey is not null))
             {
                 throw new InvalidDataException($"Некорректная запись artwork: {file.Path}");
             }

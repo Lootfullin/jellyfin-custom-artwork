@@ -11,8 +11,9 @@ namespace Jellyfin.Plugin.CustomArtwork;
 
 public sealed class CollectionArtworkRetryTracker
 {
-    private const int StateSchemaVersion = 2;
+    private const int StateSchemaVersion = 3;
     private const int MaxRetriesPerRun = 200;
+    private static readonly TimeSpan AuditInterval = TimeSpan.FromHours(1);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -88,30 +89,6 @@ public sealed class CollectionArtworkRetryTracker
         }
 
         var fallbackRequests = new List<ArtworkRefreshRequest>();
-        foreach (var (itemId, entry) in state.Entries.ToArray())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!matches.TryGetValue(itemId, out var artwork)
-                || _libraryManager.GetItemById(itemId) is not BoxSet item)
-            {
-                state.Entries.Remove(itemId);
-                continue;
-            }
-
-            if (await IsAppliedAsync(item, artwork, postersEnabled, logosEnabled, cancellationToken)
-                .ConfigureAwait(false))
-            {
-                AddFallbackRequests(
-                    fallbackRequests,
-                    itemId,
-                    item,
-                    artwork,
-                    postersEnabled,
-                    logosEnabled);
-                state.Entries.Remove(itemId);
-            }
-        }
-
         var now = DateTime.UtcNow;
         var due = state.Entries
             .Where(pair => pair.Value.NextAttemptUtc <= now)
@@ -127,6 +104,19 @@ public sealed class CollectionArtworkRetryTracker
             if (matches.TryGetValue(itemId, out var artwork)
                 && _libraryManager.GetItemById(itemId) is BoxSet item)
             {
+                if (AppliedFilesUnchanged(item, entry, artwork, postersEnabled, logosEnabled))
+                {
+                    AddFallbackRequests(
+                        fallbackRequests,
+                        itemId,
+                        item,
+                        artwork,
+                        postersEnabled,
+                        logosEnabled);
+                    MarkApplied(entry, item, now);
+                    continue;
+                }
+
                 await SaveAvailableArtworkAsync(
                     item,
                     artwork,
@@ -148,7 +138,7 @@ public sealed class CollectionArtworkRetryTracker
                         artwork,
                         postersEnabled,
                         logosEnabled);
-                    state.Entries.Remove(itemId);
+                    MarkApplied(entry, item, now);
                     continue;
                 }
 
@@ -176,6 +166,53 @@ public sealed class CollectionArtworkRetryTracker
         }
 
         return fallbackRequests;
+    }
+
+    internal static void MarkApplied(CollectionArtworkRetryEntry entry, DateTime now)
+    {
+        entry.Attempts = 0;
+        entry.NextAttemptUtc = now + AuditInterval;
+    }
+
+    private static void MarkApplied(CollectionArtworkRetryEntry entry, BoxSet item, DateTime now)
+    {
+        MarkApplied(entry, now);
+        entry.PosterFileSignature = FileSignature(item, ImageType.Primary);
+        entry.LogoFileSignature = FileSignature(item, ImageType.Logo);
+    }
+
+    internal static bool AppliedFilesUnchanged(
+        BoxSet item,
+        CollectionArtworkRetryEntry entry,
+        ArtworkSet artwork,
+        bool postersEnabled,
+        bool logosEnabled) =>
+        (!postersEnabled
+            || artwork.Poster is null
+            || entry.PosterFileSignature.Length > 0
+            && entry.PosterFileSignature.Equals(FileSignature(item, ImageType.Primary), StringComparison.Ordinal))
+        && (!logosEnabled
+            || artwork.Logo is null
+            || entry.LogoFileSignature.Length > 0
+            && entry.LogoFileSignature.Equals(FileSignature(item, ImageType.Logo), StringComparison.Ordinal));
+
+    private static string FileSignature(BoxSet item, ImageType imageType)
+    {
+        var path = item.GetImageInfo(imageType, 0)?.Path;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var info = new FileInfo(path);
+            return $"{path}\n{info.Length}\n{info.LastWriteTimeUtc.Ticks}";
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
     }
 
     internal bool IsCollection(Guid itemId) => _libraryManager.GetItemById(itemId) is BoxSet;

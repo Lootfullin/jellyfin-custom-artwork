@@ -237,6 +237,41 @@ public sealed class ArtworkIndexTests
         Assert.Same(rootLogo, result.Logo);
     }
 
+    [Theory]
+    [InlineData("item", 1893, null, "movie")]
+    [InlineData("series", 19885, null, "tv")]
+    [InlineData("season", 19885, 1, "tv")]
+    public void PublishedIdentityLookup_IncludesAllSupportedScopes(
+        string scope,
+        int tmdbId,
+        int? seasonNumber,
+        string mediaType)
+    {
+        var file = CreateFile($"Media/{scope}/poster.jpg", scope);
+        file.TmdbId = tmdbId;
+        file.SeasonNumber = seasonNumber;
+
+        var lookup = ArtworkIndex.BuildPublishedIdentityLookup([file]);
+
+        Assert.Same(file, Assert.Single(lookup[new ArtworkIdentity(mediaType, tmdbId.ToString(), seasonNumber)]));
+    }
+
+    [Fact]
+    public void ValidateManifest_AcceptsMovieWithTmdbId()
+    {
+        var file = CreateFile("Movies/Example/poster.jpg", "item");
+        file.TmdbId = 1893;
+        var manifest = new ArtworkManifest
+        {
+            SchemaVersion = 2,
+            Revision = Revision,
+            GeneratedAt = "2026-08-01T00:00:00Z",
+            Files = [file],
+        };
+
+        ArtworkIndex.ValidateManifest(manifest, Revision);
+    }
+
     [Fact]
     public void MatchCandidates_MergesNonConflictingArtworkAcrossDuplicateDirectories()
     {
@@ -256,6 +291,43 @@ public sealed class ArtworkIndexTests
         Assert.NotNull(result);
         Assert.Same(rootPoster, result.Poster);
         Assert.Same(nestedLogo, result.Logo);
+    }
+
+    [Fact]
+    public void MatchCandidates_PrefersExplicitNamedArtworkOverStaleBareFile()
+    {
+        var bare = CreateFile("Collections/Star Wars Collection/poster.jpg", "collection");
+        var named = CreateFile("Collections/Star Wars Collection/Star Wars Collection-poster.jpg", "collection");
+        named.Sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        var lookup = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal)
+        {
+            ["starwarscollection"] = [bare, named],
+        };
+
+        var result = ArtworkIndex.MatchCandidates(
+            ["starwarscollection"],
+            lookup,
+            file => file.Scope == "collection");
+
+        Assert.NotNull(result);
+        Assert.Same(named, result.Poster);
+    }
+
+    [Fact]
+    public void CollectionMembers_ResolveWrongCollectionProviderIdByMovieIds()
+    {
+        var blade = CreateFile("Collections/Blade Collection/poster.jpg", "collection");
+        blade.TmdbId = 735;
+        blade.CollectionPartTmdbIds = [36647, 36586, 12596];
+        var lookup = blade.CollectionPartTmdbIds.ToDictionary(
+            id => id.ToString(),
+            _ => new List<ArtworkManifestFile> { blade },
+            StringComparer.Ordinal);
+
+        var result = ArtworkIndex.MatchCollectionMemberIds(["36647"], lookup);
+
+        Assert.NotNull(result);
+        Assert.Same(blade, result.Poster);
     }
 
     [Fact]
