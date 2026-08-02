@@ -25,4 +25,16 @@ public sealed class CollectionArtworkRetryTrackerTests
     {
         Assert.Equal(expected, CollectionArtworkRetryTracker.MimeType(path));
     }
+
+    [Fact]
+    public void SuccessfulArtworkIsAuditedLaterInsteadOfImmediatelyRequeued()
+    {
+        var now = new DateTime(2026, 8, 2, 20, 0, 0, DateTimeKind.Utc);
+        var entry = new CollectionArtworkRetryEntry { Attempts = 7, NextAttemptUtc = DateTime.MinValue };
+
+        CollectionArtworkRetryTracker.MarkApplied(entry, now);
+
+        Assert.Equal(0, entry.Attempts);
+        Assert.Equal(now.AddHours(1), entry.NextAttemptUtc);
+    }
 }

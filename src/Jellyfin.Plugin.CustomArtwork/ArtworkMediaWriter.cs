@@ -278,6 +278,12 @@ public sealed class ArtworkMediaWriter
             var currentHash = await ComputeSha256Async(destination, cancellationToken).ConfigureAwait(false);
             if (currentHash.Equals(source.Sha256, StringComparison.OrdinalIgnoreCase))
             {
+                state.Files[destination] = new ManagedMediaFile
+                {
+                    ItemId = item.Id,
+                    Role = role,
+                    Sha256 = source.Sha256,
+                };
                 return false;
             }
 

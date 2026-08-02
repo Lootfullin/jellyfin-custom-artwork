@@ -51,6 +51,9 @@ internal sealed class ArtworkManifestFile
 
     [JsonPropertyName("collection_key")]
     public string? CollectionKey { get; set; }
+
+    [JsonPropertyName("collection_part_tmdb_ids")]
+    public List<int> CollectionPartTmdbIds { get; set; } = [];
 }
 
 internal sealed class ArtworkSet
@@ -123,6 +126,10 @@ internal sealed class CollectionArtworkRetryEntry
     public int Attempts { get; set; }
 
     public DateTime NextAttemptUtc { get; set; }
+
+    public string PosterFileSignature { get; set; } = string.Empty;
+
+    public string LogoFileSignature { get; set; } = string.Empty;
 }
 
 internal sealed record ArtworkRefreshRequest(
