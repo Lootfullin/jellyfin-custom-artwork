@@ -457,37 +457,25 @@ public sealed partial class ArtworkIndex
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCustomCollectionKey,
         string? previousCollectionKey)
     {
-        if (item is BoxSet)
+        if (item is BoxSet collection)
         {
-            if (!string.IsNullOrWhiteSpace(previousCollectionKey)
-                && byCustomCollectionKey.TryGetValue(previousCollectionKey, out var stableMatches))
-            {
-                var stableArtwork = BuildArtworkSet(stableMatches);
-                if (stableArtwork is not null)
-                {
-                    return stableArtwork;
-                }
-            }
-
-            var nameArtwork = MatchCandidates(
-                CandidateNames(item).Select(CollectionKey),
+            var collectionIdentityCandidate = TryGetIdentity(item, out var collectionIdentity)
+                ? collectionIdentity
+                : (ArtworkIdentity?)null;
+            var memberIds = collection.GetLinkedChildren()
+                .OfType<Movie>()
+                .Select(movie => movie.GetProviderId(MetadataProvider.Tmdb))
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!);
+            return MatchCollectionCandidates(
+                previousCollectionKey,
+                collectionIdentityCandidate,
+                memberIds,
+                CandidateNames(item),
                 byCollection,
-                file => file.Scope.Equals("collection", StringComparison.Ordinal));
-            if (nameArtwork is not null)
-            {
-                return nameArtwork;
-            }
-
-            var memberArtwork = MatchCollectionMembers((BoxSet)item, byCollectionPart);
-            if (memberArtwork is not null)
-            {
-                return memberArtwork;
-            }
-
-            return TryGetIdentity(item, out var collectionIdentity)
-                && byPublishedIdentity.TryGetValue(collectionIdentity, out var collectionIdentityMatches)
-                    ? BuildArtworkSet(collectionIdentityMatches)
-                    : null;
+                byPublishedIdentity,
+                byCollectionPart,
+                byCustomCollectionKey);
         }
 
         if (TryGetIdentity(item, out var identity)
@@ -510,6 +498,53 @@ public sealed partial class ArtworkIndex
             byRelease,
             file => file.Scope.Equals(scope, StringComparison.Ordinal)
                 && (scope != "season" || file.SeasonNumber == seasonNumber));
+    }
+
+    internal static ArtworkSet? MatchCollectionCandidates(
+        string? previousCollectionKey,
+        ArtworkIdentity? identity,
+        IEnumerable<string> memberTmdbIds,
+        IEnumerable<string> candidateNames,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollection,
+        IReadOnlyDictionary<ArtworkIdentity, List<ArtworkManifestFile>> byPublishedIdentity,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollectionPart,
+        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCustomCollectionKey)
+    {
+        if (!string.IsNullOrWhiteSpace(previousCollectionKey)
+            && byCustomCollectionKey.TryGetValue(previousCollectionKey, out var stableMatches))
+        {
+            var stableArtwork = BuildArtworkSet(stableMatches);
+            if (stableArtwork is not null)
+            {
+                return stableArtwork;
+            }
+        }
+
+        // Membership is the strongest signal for official collections. It also
+        // repairs BoxSets whose provider ID or localized name was overwritten by
+        // another metadata provider.
+        var memberArtwork = MatchCollectionMemberIds(memberTmdbIds, byCollectionPart);
+        if (memberArtwork is not null)
+        {
+            return memberArtwork;
+        }
+
+        if (identity is { } collectionIdentity
+            && byPublishedIdentity.TryGetValue(collectionIdentity, out var identityMatches))
+        {
+            var identityArtwork = BuildArtworkSet(identityMatches);
+            if (identityArtwork is not null)
+            {
+                return identityArtwork;
+            }
+        }
+
+        // Names are deliberately the final fallback: they are localized and can
+        // be duplicated by user-created supercollections.
+        return MatchCandidates(
+            candidateNames.Select(CollectionKey),
+            byCollection,
+            file => file.Scope.Equals("collection", StringComparison.Ordinal));
     }
 
     internal static ArtworkSet? MatchCandidates(
@@ -582,19 +617,6 @@ public sealed partial class ArtworkIndex
         }
 
         return result;
-    }
-
-    private static ArtworkSet? MatchCollectionMembers(
-        BoxSet collection,
-        IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollectionPart)
-    {
-        var memberIds = collection.GetLinkedChildren()
-            .OfType<Movie>()
-            .Select(movie => movie.GetProviderId(MetadataProvider.Tmdb))
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => value!)
-            .ToArray();
-        return MatchCollectionMemberIds(memberIds, byCollectionPart);
     }
 
     internal static ArtworkSet? MatchCollectionMemberIds(
