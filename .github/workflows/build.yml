@@ -28,7 +28,7 @@ jobs:
 
       - name: Build and verify release package
         shell: pwsh
-        run: ./build-package.ps1 -Version 2.3.5.0
+        run: ./build-package.ps1
 
       - name: Validate plugin catalog
         shell: pwsh
