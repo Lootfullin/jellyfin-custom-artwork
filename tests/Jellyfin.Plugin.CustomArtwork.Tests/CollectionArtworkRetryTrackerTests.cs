@@ -15,4 +15,14 @@ public sealed class CollectionArtworkRetryTrackerTests
             TimeSpan.FromMinutes(expectedMinutes),
             CollectionArtworkRetryTracker.RetryDelay(attempts));
     }
+
+    [Theory]
+    [InlineData("poster.jpg", "image/jpeg")]
+    [InlineData("poster.jpeg", "image/jpeg")]
+    [InlineData("clearlogo.png", "image/png")]
+    [InlineData("poster.webp", "image/webp")]
+    public void MimeTypeUsesArtworkExtension(string path, string expected)
+    {
+        Assert.Equal(expected, CollectionArtworkRetryTracker.MimeType(path));
+    }
 }

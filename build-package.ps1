@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = $PSScriptRoot
-$version = '2.3.2.0'
+$version = '2.3.3.0'
 $nugetCache = Join-Path $projectRoot '.nuget'
 $artifactRoot = Join-Path $projectRoot 'artifacts'
 $publishRoot = Join-Path $artifactRoot 'publish'

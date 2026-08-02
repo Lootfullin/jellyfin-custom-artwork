@@ -74,14 +74,17 @@ public sealed class RefreshIndexTask : IScheduledTask
             mediaChanges = await _mediaWriter.ApplyAsync(configuration, cancellationToken).ConfigureAwait(false);
         }
 
-        var collectionRetries = await _collectionRetryTracker.GetDueRetriesAsync(
+        await _collectionRetryTracker.ApplyDueRetriesAsync(
             _index.Matches,
             _index.ChangedItemIds,
             configuration.Posters,
             configuration.Logos,
             cancellationToken).ConfigureAwait(false);
 
-        RequeueChangedItems(_index.ChangedItemIds.Concat(mediaChanges).Concat(collectionRetries));
+        RequeueChangedItems(
+            _index.ChangedItemIds
+                .Concat(mediaChanges)
+                .Where(itemId => !_collectionRetryTracker.IsCollection(itemId)));
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
