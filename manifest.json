@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/Lootfullin/jellyfin-custom-artwork/main/packaging/logo.png",
     "versions": [
       {
+        "version": "2.3.3.0",
+        "changelog": "Кастомные изображения коллекций загружаются напрямую после проверки размера и SHA-256. При ошибке TMDB и другие источники больше не заменяют обложку.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.3/Cowabunga.Custom.Artwork_2.3.3.0.zip",
+        "checksum": "39c7b067a1d71373b317a65e0c770580",
+        "timestamp": "2026-08-02T12:07:02Z"
+      },
+      {
         "version": "2.3.2.0",
         "changelog": "Загрузка изображений коллекций проверяется по SHA-256 и автоматически повторяется после временных ошибок до фактического сохранения файла в Jellyfin.",
         "targetAbi": "10.11.0.0",
