@@ -56,11 +56,10 @@ public sealed class ArtworkImageProvider : IRemoteImageProvider, IImageProvider,
             await _index.BuildAsync(null, cancellationToken).ConfigureAwait(false);
         }
 
-        if (configuration.StorageMode.Equals(
-                PluginConfiguration.MediaFolderStorage,
-                StringComparison.Ordinal)
-            && item is not BoxSet)
+        if (!_index.RemoteArtworkAvailable)
         {
+            _logger.LogDebug(
+                "Custom Artwork: облако недоступно, Jellyfin использует следующий источник изображений");
             return Array.Empty<RemoteImageInfo>();
         }
 

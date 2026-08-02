@@ -71,6 +71,8 @@ internal readonly record struct ArtworkIdentity(string MediaType, string TmdbId,
 
 internal sealed class ArtworkState
 {
+    public int SchemaVersion { get; set; }
+
     public string Revision { get; set; } = string.Empty;
 
     public Dictionary<string, ArtworkStateEntry> Entries { get; set; } = new(StringComparer.Ordinal);
@@ -122,3 +124,7 @@ internal sealed class CollectionArtworkRetryEntry
 
     public DateTime NextAttemptUtc { get; set; }
 }
+
+internal sealed record ArtworkRefreshRequest(
+    Guid ItemId,
+    IReadOnlyCollection<MediaBrowser.Model.Entities.ImageType> ImageTypes);

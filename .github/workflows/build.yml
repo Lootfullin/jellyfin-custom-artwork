@@ -25,3 +25,7 @@ jobs:
 
       - name: Test
         run: dotnet test tests/Jellyfin.Plugin.CustomArtwork.Tests/Jellyfin.Plugin.CustomArtwork.Tests.csproj --configuration Release --no-restore
+
+      - name: Build and verify release package
+        shell: pwsh
+        run: ./build-package.ps1 -Version 2.3.4.0

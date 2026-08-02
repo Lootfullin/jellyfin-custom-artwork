@@ -74,17 +74,36 @@ public sealed class RefreshIndexTask : IScheduledTask
             mediaChanges = await _mediaWriter.ApplyAsync(configuration, cancellationToken).ConfigureAwait(false);
         }
 
-        await _collectionRetryTracker.ApplyDueRetriesAsync(
+        var collectionFallbacks = await _collectionRetryTracker.ApplyDueRetriesAsync(
             _index.Matches,
             _index.ChangedItemIds,
             configuration.Posters,
             configuration.Logos,
             cancellationToken).ConfigureAwait(false);
 
+        var removedCollectionRoles = _index.ChangedImageTypes
+            .Where(pair => _collectionRetryTracker.IsCollection(pair.Key))
+            .Select(pair => new ArtworkRefreshRequest(
+                pair.Key,
+                GetRemovedImageTypes(
+                    _index.Matches.GetValueOrDefault(pair.Key),
+                    FilterEnabledImageTypes(pair.Value, configuration))))
+            .Where(request => request.ImageTypes.Count > 0);
+
+        var regularRequests = _index.ChangedImageTypes
+            .Where(pair => !_collectionRetryTracker.IsCollection(pair.Key))
+            .Select(pair => new ArtworkRefreshRequest(
+                pair.Key,
+                FilterEnabledImageTypes(pair.Value, configuration)))
+            .Where(request => request.ImageTypes.Count > 0)
+            .Concat(CreateRefreshRequests(
+                mediaChanges
+                    .Where(itemId => !_collectionRetryTracker.IsCollection(itemId)),
+                configuration));
         RequeueChangedItems(
-            _index.ChangedItemIds
-                .Concat(mediaChanges)
-                .Where(itemId => !_collectionRetryTracker.IsCollection(itemId)));
+            regularRequests
+                .Concat(collectionFallbacks)
+                .Concat(removedCollectionRoles));
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -102,23 +121,87 @@ public sealed class RefreshIndexTask : IScheduledTask
         };
     }
 
-    private void RequeueChangedItems(IEnumerable<Guid> itemIds)
+    private IEnumerable<ArtworkRefreshRequest> CreateRefreshRequests(
+        IEnumerable<Guid> itemIds,
+        Configuration.PluginConfiguration configuration)
     {
-        var changed = itemIds.Distinct().ToList();
-        if (changed.Count == 0)
+        foreach (var itemId in itemIds.Distinct())
         {
-            return;
+            _index.Matches.TryGetValue(itemId, out var artwork);
+            var imageTypes = GetRefreshImageTypes(artwork, configuration);
+
+            if (imageTypes.Count > 0)
+            {
+                yield return new ArtworkRefreshRequest(itemId, imageTypes);
+            }
+        }
+    }
+
+    internal static IReadOnlyCollection<ImageType> GetRefreshImageTypes(
+        ArtworkSet? artwork,
+        Configuration.PluginConfiguration configuration)
+    {
+        var imageTypes = new List<ImageType>(2);
+        if (configuration.Posters && (artwork is null || artwork.Poster is not null))
+        {
+            imageTypes.Add(ImageType.Primary);
         }
 
-        foreach (var itemId in changed)
+        if (configuration.Logos && (artwork is null || artwork.Logo is not null))
+        {
+            imageTypes.Add(ImageType.Logo);
+        }
+
+        return imageTypes;
+    }
+
+    internal static IReadOnlyCollection<ImageType> FilterEnabledImageTypes(
+        IEnumerable<ImageType> imageTypes,
+        Configuration.PluginConfiguration configuration)
+    {
+        return imageTypes
+            .Where(imageType => imageType switch
+            {
+                ImageType.Primary => configuration.Posters,
+                ImageType.Logo => configuration.Logos,
+                _ => false,
+            })
+            .Distinct()
+            .ToArray();
+    }
+
+    internal static IReadOnlyCollection<ImageType> GetRemovedImageTypes(
+        ArtworkSet? artwork,
+        IEnumerable<ImageType> changedImageTypes)
+    {
+        return changedImageTypes
+            .Where(imageType => imageType switch
+            {
+                ImageType.Primary => artwork?.Poster is null,
+                ImageType.Logo => artwork?.Logo is null,
+                _ => false,
+            })
+            .Distinct()
+            .ToArray();
+    }
+
+    private void RequeueChangedItems(IEnumerable<ArtworkRefreshRequest> requests)
+    {
+        var changed = requests
+            .GroupBy(request => request.ItemId)
+            .Select(group => new ArtworkRefreshRequest(
+                group.Key,
+                group.SelectMany(request => request.ImageTypes).Distinct().ToArray()))
+            .ToList();
+        foreach (var request in changed)
         {
             var options = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
             {
                 MetadataRefreshMode = MetadataRefreshMode.None,
                 ImageRefreshMode = MetadataRefreshMode.FullRefresh,
-                ReplaceImages = [ImageType.Primary, ImageType.Logo],
+                ReplaceImages = request.ImageTypes.ToArray(),
             };
-            _providerManager.QueueRefresh(itemId, options, RefreshPriority.High);
+            _providerManager.QueueRefresh(request.ItemId, options, RefreshPriority.High);
         }
 
         _logger.LogInformation(

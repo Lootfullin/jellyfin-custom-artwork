@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.CustomArtwork;
 public sealed class CollectionArtworkRetryTracker
 {
     private const int StateSchemaVersion = 2;
-    private const int MaxRetriesPerRun = 50;
+    private const int MaxRetriesPerRun = 200;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -40,7 +40,7 @@ public sealed class CollectionArtworkRetryTracker
         Plugin.Instance?.DataFolderPath ?? Path.GetTempPath(),
         "collection-artwork-retries.v1.json");
 
-    internal async Task ApplyDueRetriesAsync(
+    internal async Task<IReadOnlyCollection<ArtworkRefreshRequest>> ApplyDueRetriesAsync(
         IReadOnlyDictionary<Guid, ArtworkSet> matches,
         IEnumerable<Guid> changedItemIds,
         bool postersEnabled,
@@ -87,6 +87,7 @@ public sealed class CollectionArtworkRetryTracker
             state.Entries.Remove(removedId);
         }
 
+        var fallbackRequests = new List<ArtworkRefreshRequest>();
         foreach (var (itemId, entry) in state.Entries.ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -100,6 +101,13 @@ public sealed class CollectionArtworkRetryTracker
             if (await IsAppliedAsync(item, artwork, postersEnabled, logosEnabled, cancellationToken)
                 .ConfigureAwait(false))
             {
+                AddFallbackRequests(
+                    fallbackRequests,
+                    itemId,
+                    item,
+                    artwork,
+                    postersEnabled,
+                    logosEnabled);
                 state.Entries.Remove(itemId);
             }
         }
@@ -116,7 +124,6 @@ public sealed class CollectionArtworkRetryTracker
         {
             cancellationToken.ThrowIfCancellationRequested();
             entry.Attempts++;
-            entry.NextAttemptUtc = now + RetryDelay(entry.Attempts);
             if (matches.TryGetValue(itemId, out var artwork)
                 && _libraryManager.GetItemById(itemId) is BoxSet item)
             {
@@ -126,7 +133,37 @@ public sealed class CollectionArtworkRetryTracker
                     postersEnabled,
                     logosEnabled,
                     cancellationToken).ConfigureAwait(false);
+
+                if (await IsAppliedAsync(
+                        item,
+                        artwork,
+                        postersEnabled,
+                        logosEnabled,
+                        cancellationToken).ConfigureAwait(false))
+                {
+                    AddFallbackRequests(
+                        fallbackRequests,
+                        itemId,
+                        item,
+                        artwork,
+                        postersEnabled,
+                        logosEnabled);
+                    state.Entries.Remove(itemId);
+                    continue;
+                }
+
+                var missingTypes = MissingImageTypes(
+                    item,
+                    artwork,
+                    postersEnabled,
+                    logosEnabled);
+                if (missingTypes.Count > 0)
+                {
+                    fallbackRequests.Add(new ArtworkRefreshRequest(itemId, missingTypes));
+                }
             }
+
+            entry.NextAttemptUtc = now + RetryDelay(entry.Attempts);
         }
 
         SaveState(state);
@@ -138,6 +175,7 @@ public sealed class CollectionArtworkRetryTracker
                 state.Entries.Count);
         }
 
+        return fallbackRequests;
     }
 
     internal bool IsCollection(Guid itemId) => _libraryManager.GetItemById(itemId) is BoxSet;
@@ -147,6 +185,77 @@ public sealed class CollectionArtworkRetryTracker
 
     private static string EffectiveFingerprint(ArtworkSet artwork, bool postersEnabled, bool logosEnabled) =>
         $"{(postersEnabled ? artwork.Poster?.Sha256 : null)}|{(logosEnabled ? artwork.Logo?.Sha256 : null)}".Trim('|');
+
+    internal static IReadOnlyCollection<ImageType> MissingImageTypes(
+        BoxSet item,
+        ArtworkSet artwork,
+        bool postersEnabled,
+        bool logosEnabled)
+    {
+        var result = new List<ImageType>(2);
+        if (postersEnabled
+            && artwork.Poster is not null
+            && !HasImage(item, ImageType.Primary))
+        {
+            result.Add(ImageType.Primary);
+        }
+
+        if (logosEnabled
+            && artwork.Logo is not null
+            && !HasImage(item, ImageType.Logo))
+        {
+            result.Add(ImageType.Logo);
+        }
+
+        return result;
+    }
+
+    internal static IReadOnlyCollection<ImageType> GetFallbackImageTypes(
+        ArtworkSet artwork,
+        bool postersEnabled,
+        bool logosEnabled,
+        bool hasPoster,
+        bool hasLogo)
+    {
+        var result = new List<ImageType>(2);
+        if (postersEnabled && artwork.Poster is null && !hasPoster)
+        {
+            result.Add(ImageType.Primary);
+        }
+
+        if (logosEnabled && artwork.Logo is null && !hasLogo)
+        {
+            result.Add(ImageType.Logo);
+        }
+
+        return result;
+    }
+
+    private static void AddFallbackRequests(
+        ICollection<ArtworkRefreshRequest> requests,
+        Guid itemId,
+        BoxSet item,
+        ArtworkSet artwork,
+        bool postersEnabled,
+        bool logosEnabled)
+    {
+        var imageTypes = GetFallbackImageTypes(
+            artwork,
+            postersEnabled,
+            logosEnabled,
+            HasImage(item, ImageType.Primary),
+            HasImage(item, ImageType.Logo));
+        if (imageTypes.Count > 0)
+        {
+            requests.Add(new ArtworkRefreshRequest(itemId, imageTypes));
+        }
+    }
+
+    private static bool HasImage(BoxSet item, ImageType imageType)
+    {
+        var path = item.GetImageInfo(imageType, 0)?.Path;
+        return !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+    }
 
     private static async Task<bool> IsAppliedAsync(
         BoxSet item,
@@ -255,11 +364,12 @@ public sealed class CollectionArtworkRetryTracker
             exception is HttpRequestException
             or IOException
             or UnauthorizedAccessException
-            or InvalidDataException)
+            or InvalidDataException
+            || exception is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning(
                 exception,
-                "Custom Artwork: кастомное изображение коллекции {ItemName} не сохранено; другие источники не используются",
+                "Custom Artwork: кастомное изображение коллекции {ItemName} не сохранено; попытка будет повторена",
                 item.Name);
         }
         finally
