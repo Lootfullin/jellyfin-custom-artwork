@@ -32,7 +32,7 @@ New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $publishRoot 'Jellyfin.Plugin.CustomArtwork.dll') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\logo.png') -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $projectRoot 'packaging\meta.json') -Destination $packageRoot
-Compress-Archive -LiteralPath $packageRoot -DestinationPath $archivePath -CompressionLevel Optimal -Force
+Compress-Archive -Path (Join-Path $packageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal -Force
 
 $hash = Get-FileHash -LiteralPath $archivePath -Algorithm SHA256
 $catalogHash = Get-FileHash -LiteralPath $archivePath -Algorithm MD5

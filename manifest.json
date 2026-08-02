@@ -13,7 +13,7 @@
         "changelog": "В режиме хранения рядом с видео можно разрешить замену существующих локальных постеров и логотипов изображениями из облака.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.1/Cowabunga.Custom.Artwork_2.3.1.0.zip",
-        "checksum": "94da80f82e74e795a1a53540022ce223",
+        "checksum": "4550639662e2fda618e96de3c7533362",
         "timestamp": "2026-08-01T20:09:05Z"
       },
       {
@@ -21,7 +21,7 @@
         "changelog": "Коллекции сопоставляются по TMDB ID или стабильному ключу. Исправлены вложенные и пользовательские суперколлекции, порядок источников изображений настраивается автоматически.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.0/Cowabunga.Custom.Artwork_2.3.0.0.zip",
-        "checksum": "8749937a46f5686a193abb03f73d6387",
+        "checksum": "5f74afed3479688cf0ee84f0a50eef39",
         "timestamp": "2026-08-01T12:51:43Z"
       },
       {
@@ -29,7 +29,7 @@
         "changelog": "Подключение к облаку настроено заранее. После установки больше не нужно вводить адрес, имя пользователя, пароль или папку.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.2.0/Cowabunga.Custom.Artwork_2.2.0.0.zip",
-        "checksum": "1de7f12e68ebc1a07d6e564ae14f585b",
+        "checksum": "a48f0b68eee05d29d3996234ef886f33",
         "timestamp": "2026-08-01T11:44:14Z"
       },
       {
@@ -37,7 +37,7 @@
         "changelog": "Добавлена установка и автоматическое обновление через репозиторий Jellyfin. Уточнена поддержка всех операционных систем Jellyfin.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.1.1/Cowabunga.Custom.Artwork_2.1.1.0.zip",
-        "checksum": "73a9fa9bf91bb5aeb84a5a3c313b4ad1",
+        "checksum": "924c7ed5f8ca624b9a782f0eb1e5585b",
         "timestamp": "2026-08-01T10:40:08Z"
       }
     ]
