@@ -199,13 +199,12 @@ public sealed class ArtworkIndexTests
     [Fact]
     public void MatchCandidates_SkipsAmbiguousDirectories()
     {
+        var first = CreateFile("Movies/One/poster.jpg", "item");
+        var second = CreateFile("Movies/Two/poster.jpg", "item");
+        second.Sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         var lookup = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal)
         {
-            ["example"] =
-            [
-                CreateFile("Movies/One/poster.jpg", "item"),
-                CreateFile("Movies/Two/poster.jpg", "item"),
-            ],
+            ["example"] = [first, second],
         };
 
         var result = ArtworkIndex.MatchCandidates(
@@ -214,6 +213,49 @@ public sealed class ArtworkIndexTests
             file => file.Scope == "item");
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public void MatchCandidates_AcceptsContentIdenticalCopiesInNestedCollectionDirectories()
+    {
+        var rootPoster = CreateFile("Collections/Iron Man Collection/poster.jpg", "collection");
+        var rootLogo = CreateFile("Collections/Iron Man Collection/clearlogo.png", "collection");
+        var nestedPoster = CreateFile("Collections/Marvel Collection/Iron Man Collection/poster.jpg", "collection");
+        var nestedLogo = CreateFile("Collections/Marvel Collection/Iron Man Collection/clearlogo.png", "collection");
+        var lookup = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal)
+        {
+            ["ironmancollection"] = [rootPoster, rootLogo, nestedPoster, nestedLogo],
+        };
+
+        var result = ArtworkIndex.MatchCandidates(
+            ["ironmancollection"],
+            lookup,
+            file => file.Scope == "collection");
+
+        Assert.NotNull(result);
+        Assert.Same(rootPoster, result.Poster);
+        Assert.Same(rootLogo, result.Logo);
+    }
+
+    [Fact]
+    public void MatchCandidates_MergesNonConflictingArtworkAcrossDuplicateDirectories()
+    {
+        var rootPoster = CreateFile("Collections/Iron Man Collection/poster.jpg", "collection");
+        var nestedPoster = CreateFile("Collections/Marvel Collection/Iron Man Collection/poster.jpg", "collection");
+        var nestedLogo = CreateFile("Collections/Marvel Collection/Iron Man Collection/clearlogo.png", "collection");
+        var lookup = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal)
+        {
+            ["ironmancollection"] = [rootPoster, nestedPoster, nestedLogo],
+        };
+
+        var result = ArtworkIndex.MatchCandidates(
+            ["ironmancollection"],
+            lookup,
+            file => file.Scope == "collection");
+
+        Assert.NotNull(result);
+        Assert.Same(rootPoster, result.Poster);
+        Assert.Same(nestedLogo, result.Logo);
     }
 
     [Fact]
