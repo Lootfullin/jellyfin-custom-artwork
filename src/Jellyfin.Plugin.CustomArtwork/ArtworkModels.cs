@@ -106,3 +106,19 @@ internal sealed class ManagedMediaFile
 
     public string Sha256 { get; set; } = string.Empty;
 }
+
+internal sealed class CollectionArtworkRetryState
+{
+    public int SchemaVersion { get; set; }
+
+    public Dictionary<Guid, CollectionArtworkRetryEntry> Entries { get; set; } = [];
+}
+
+internal sealed class CollectionArtworkRetryEntry
+{
+    public string Fingerprint { get; set; } = string.Empty;
+
+    public int Attempts { get; set; }
+
+    public DateTime NextAttemptUtc { get; set; }
+}
