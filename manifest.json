@@ -1,61 +1,21 @@
 [
-  {
-    "guid": "6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1",
-    "name": "Cowabunga Custom Artwork",
-    "description": "Подставляет кастомные постеры и логотипы из приватного облака Cowabunga фильмам, сериалам, сезонам и коллекциям.",
-    "overview": "Кастомные обложки из приватного облака",
-    "owner": "iMaks533",
-    "category": "MoviesAndShows",
-    "imageUrl": "https://raw.githubusercontent.com/Lootfullin/jellyfin-custom-artwork/main/packaging/logo.png",
-    "versions": [
-      {
-        "version": "2.3.3.0",
-        "changelog": "Кастомные изображения коллекций загружаются напрямую после проверки размера и SHA-256. При ошибке TMDB и другие источники больше не заменяют обложку.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.3/Cowabunga.Custom.Artwork_2.3.3.0.zip",
-        "checksum": "39c7b067a1d71373b317a65e0c770580",
-        "timestamp": "2026-08-02T12:07:02Z"
-      },
-      {
-        "version": "2.3.2.0",
-        "changelog": "Загрузка изображений коллекций проверяется по SHA-256 и автоматически повторяется после временных ошибок до фактического сохранения файла в Jellyfin.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.2/Cowabunga.Custom.Artwork_2.3.2.0.zip",
-        "checksum": "fa4f2791214d6b7a4a83c057ee4bbb22",
-        "timestamp": "2026-08-02T11:39:21Z"
-      },
-      {
-        "version": "2.3.1.0",
-        "changelog": "В режиме хранения рядом с видео можно разрешить замену существующих локальных постеров и логотипов изображениями из облака.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.1/Cowabunga.Custom.Artwork_2.3.1.0.zip",
-        "checksum": "4550639662e2fda618e96de3c7533362",
-        "timestamp": "2026-08-01T20:09:05Z"
-      },
-      {
-        "version": "2.3.0.0",
-        "changelog": "Коллекции сопоставляются по TMDB ID или стабильному ключу. Исправлены вложенные и пользовательские суперколлекции, порядок источников изображений настраивается автоматически.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.0/Cowabunga.Custom.Artwork_2.3.0.0.zip",
-        "checksum": "5f74afed3479688cf0ee84f0a50eef39",
-        "timestamp": "2026-08-01T12:51:43Z"
-      },
-      {
-        "version": "2.2.0.0",
-        "changelog": "Подключение к облаку настроено заранее. После установки больше не нужно вводить адрес, имя пользователя, пароль или папку.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.2.0/Cowabunga.Custom.Artwork_2.2.0.0.zip",
-        "checksum": "a48f0b68eee05d29d3996234ef886f33",
-        "timestamp": "2026-08-01T11:44:14Z"
-      },
-      {
-        "version": "2.1.1.0",
-        "changelog": "Добавлена установка и автоматическое обновление через репозиторий Jellyfin. Уточнена поддержка всех операционных систем Jellyfin.",
-        "targetAbi": "10.11.0.0",
-        "sourceUrl": "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.1.1/Cowabunga.Custom.Artwork_2.1.1.0.zip",
-        "checksum": "924c7ed5f8ca624b9a782f0eb1e5585b",
-        "timestamp": "2026-08-01T10:40:08Z"
-      }
-    ]
-  }
+{
+    "guid":  "6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1",
+    "name":  "Cowabunga Custom Artwork",
+    "description":  "Подставляет кастомные постеры и логотипы из приватного облака Cowabunga фильмам, сериалам, сезонам и коллекциям.",
+    "overview":  "Кастомные обложки из приватного облака",
+    "owner":  "iMaks533",
+    "category":  "MoviesAndShows",
+    "imageUrl":  "https://raw.githubusercontent.com/Lootfullin/jellyfin-custom-artwork/main/packaging/logo.png",
+    "versions":  [
+                     {
+                         "version":  "2.3.3.0",
+                         "changelog":  "Кастомные изображения коллекций загружаются напрямую после проверки размера и SHA-256. При ошибке TMDB и другие источники больше не заменяют обложку.",
+                         "targetAbi":  "10.11.0.0",
+                         "sourceUrl":  "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.3.3/Cowabunga.Custom.Artwork_2.3.3.0.zip",
+                         "checksum":  "39c7b067a1d71373b317a65e0c770580",
+                         "timestamp":  "2026-08-02T12:07:02Z"
+                     }
+                 ]
+}
 ]

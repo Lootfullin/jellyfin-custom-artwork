@@ -8,6 +8,7 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 {
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        serviceCollection.AddHostedService<StalePluginVersionCleanupService>();
         serviceCollection.AddSingleton<ArtworkIndex>();
         serviceCollection.AddSingleton<ArtworkMediaWriter>();
         serviceCollection.AddSingleton<ArtworkLibraryConfigurator>();

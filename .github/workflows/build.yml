@@ -29,3 +29,11 @@ jobs:
       - name: Build and verify release package
         shell: pwsh
         run: ./build-package.ps1 -Version 2.3.4.0
+
+      - name: Validate plugin catalog
+        shell: pwsh
+        run: |
+          $catalog = Get-Content manifest.json -Raw | ConvertFrom-Json
+          if ($catalog.Count -ne 1 -or @($catalog[0].versions).Count -ne 1) {
+            throw 'Catalog must contain one plugin with one current compatible version.'
+          }
