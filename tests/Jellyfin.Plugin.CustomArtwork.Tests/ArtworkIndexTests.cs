@@ -331,6 +331,39 @@ public sealed class ArtworkIndexTests
     }
 
     [Fact]
+    public void CollectionMatching_PrefersMembersOverWrongProviderIdAndLocalizedName()
+    {
+        var correct = CreateFile("Collections/Blade Collection/poster.jpg", "collection");
+        correct.TmdbId = 735;
+        correct.CollectionPartTmdbIds = [36647, 36586, 12596];
+        var wrong = CreateFile("Collections/Marvel Collection/poster.jpg", "collection");
+        wrong.TmdbId = 131292;
+
+        var byCollection = new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal)
+        {
+            ["marvelcollection"] = [wrong],
+        };
+        var byIdentity = ArtworkIndex.BuildPublishedIdentityLookup([correct, wrong]);
+        var byParts = correct.CollectionPartTmdbIds.ToDictionary(
+            id => id.ToString(),
+            _ => new List<ArtworkManifestFile> { correct },
+            StringComparer.Ordinal);
+
+        var result = ArtworkIndex.MatchCollectionCandidates(
+            previousCollectionKey: null,
+            identity: new ArtworkIdentity("collection", "131292", null),
+            memberTmdbIds: ["36647"],
+            candidateNames: ["Marvel Collection"],
+            byCollection,
+            byIdentity,
+            byParts,
+            new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal));
+
+        Assert.NotNull(result);
+        Assert.Same(correct, result.Poster);
+    }
+
+    [Fact]
     public void MediaFolderDestination_UsesVideoBaseNameForMovie()
     {
         var directory = CreateTemporaryDirectory();
