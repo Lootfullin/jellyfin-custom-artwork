@@ -8,11 +8,13 @@ namespace Jellyfin.Plugin.CustomArtwork;
 
 public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
+    internal const string PluginGuid = "6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1";
+
     public static Plugin? Instance { get; private set; }
 
     public override string Name => "Cowabunga Custom Artwork";
 
-    public override Guid Id => Guid.Parse("6f2d1a54-9c6e-4f2b-9a7d-5c1e2b8a44f1");
+    public override Guid Id => Guid.Parse(PluginGuid);
 
     public override string Description =>
         "Постеры и логотипы из облака Cowabunga.";

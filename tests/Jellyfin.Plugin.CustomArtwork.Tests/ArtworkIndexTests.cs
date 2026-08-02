@@ -33,6 +33,24 @@ public sealed class ArtworkIndexTests
     }
 
     [Theory]
+    [InlineData(CollectionTypeOptions.movies, "Movie")]
+    [InlineData(CollectionTypeOptions.movies, "BoxSet")]
+    [InlineData(CollectionTypeOptions.tvshows, "Series")]
+    [InlineData(CollectionTypeOptions.tvshows, "Season")]
+    public void LibraryConfiguration_EnablesEverySupportedMediaType(
+        CollectionTypeOptions collectionType,
+        string itemType)
+    {
+        var options = new LibraryOptions();
+
+        Assert.True(ArtworkLibraryConfigurator.Apply(options, collectionType));
+
+        var itemOptions = options.GetTypeOptions(itemType);
+        Assert.NotNull(itemOptions);
+        Assert.Equal("Cowabunga Custom Artwork", itemOptions.ImageFetcherOrder[0]);
+    }
+
+    [Theory]
     [InlineData("Sherlock (2010) [S01 UHD DR]", "sherlock (2010)")]
     [InlineData("  Dr. No (1962)  ", "dr. no (1962)")]
     public void ReleaseKey_RemovesQualitySuffix(string value, string expected)

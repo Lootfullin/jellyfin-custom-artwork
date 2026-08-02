@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.CustomArtwork;
 public sealed partial class ArtworkIndex
 {
     private const int MaxRevisionBytes = 4096;
+    private const int StateSchemaVersion = 2;
     private const int MaxManifestBytes = 32 * 1024 * 1024;
     private const int MaxManifestFiles = 100_000;
     private const long MaxArtworkBytes = 100 * 1024 * 1024;
@@ -62,7 +63,12 @@ public sealed partial class ArtworkIndex
 
     public string LastError { get; private set; } = string.Empty;
 
+    internal bool RemoteArtworkAvailable => string.IsNullOrWhiteSpace(LastError);
+
     public IReadOnlyCollection<Guid> ChangedItemIds { get; private set; } = Array.Empty<Guid>();
+
+    internal IReadOnlyDictionary<Guid, IReadOnlyCollection<ImageType>> ChangedImageTypes { get; private set; }
+        = new Dictionary<Guid, IReadOnlyCollection<ImageType>>();
 
     internal IReadOnlyDictionary<Guid, ArtworkSet> Matches => _byItemId;
 
@@ -129,6 +135,7 @@ public sealed partial class ArtworkIndex
         }
         catch (Exception exception) when (
             exception is HttpRequestException
+            or TaskCanceledException
             or IOException
             or JsonException
             or UnauthorizedAccessException
@@ -175,10 +182,26 @@ public sealed partial class ArtworkIndex
         }
 
         using var request = CreateRequest(HttpMethod.Get, requested);
-        return await _httpClientFactory
-            .CreateClient("Default")
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            var response = await _httpClientFactory
+                .CreateClient("Default")
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                LastError = $"Облако artwork вернуло HTTP {(int)response.StatusCode}.";
+            }
+
+            return response;
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException
+            || exception is TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            LastError = exception.Message;
+            throw;
+        }
     }
 
     private async Task RefreshManifestAsync(CancellationToken cancellationToken)
@@ -225,9 +248,15 @@ public sealed partial class ArtworkIndex
         var identities = new Dictionary<ArtworkIdentity, ArtworkSet>();
         var ambiguousIdentities = new HashSet<ArtworkIdentity>();
         var itemIds = new Dictionary<Guid, ArtworkSet>();
-        var currentState = new ArtworkState { Revision = manifest.Revision };
+        var currentState = new ArtworkState
+        {
+            SchemaVersion = StateSchemaVersion,
+            Revision = manifest.Revision,
+        };
         var previousState = LoadState();
+        var forceCurrentArtworkRefresh = previousState.SchemaVersion != StateSchemaVersion;
         var changed = new HashSet<Guid>();
+        var changedImageTypes = new Dictionary<Guid, HashSet<ImageType>>();
 
         var query = new InternalItemsQuery
         {
@@ -286,10 +315,16 @@ public sealed partial class ArtworkIndex
                 CollectionKey = artwork.CollectionKey,
             };
 
-            if (!previousState.Entries.TryGetValue(stateKey, out var previous)
-                || !previous.Fingerprint.Equals(artwork.Fingerprint, StringComparison.Ordinal))
+            if (forceCurrentArtworkRefresh
+                || previousEntry is null
+                || !previousEntry.Fingerprint.Equals(artwork.Fingerprint, StringComparison.Ordinal))
             {
                 changed.Add(item.Id);
+                AddChangedImageTypes(
+                    changedImageTypes,
+                    item.Id,
+                    forceCurrentArtworkRefresh ? null : previousEntry?.Fingerprint,
+                    artwork.Fingerprint);
             }
 
             if (index % 100 == 0)
@@ -300,7 +335,13 @@ public sealed partial class ArtworkIndex
 
         foreach (var removed in previousState.Entries.Keys.Except(currentState.Entries.Keys, StringComparer.Ordinal))
         {
-            changed.Add(previousState.Entries[removed].ItemId);
+            var previous = previousState.Entries[removed];
+            changed.Add(previous.ItemId);
+            AddChangedImageTypes(
+                changedImageTypes,
+                previous.ItemId,
+                previous.Fingerprint,
+                currentFingerprint: null);
         }
 
         _byIdentity = identities;
@@ -308,7 +349,53 @@ public sealed partial class ArtworkIndex
         _allowedPaths = manifest.Files.Select(file => file.Path).ToHashSet(StringComparer.Ordinal);
         Count = itemIds.Count;
         ChangedItemIds = changed;
+        ChangedImageTypes = changedImageTypes.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyCollection<ImageType>)pair.Value.ToArray());
         SaveJsonAtomically(StatePath, currentState);
+    }
+
+    internal static IReadOnlyCollection<ImageType> GetChangedImageTypes(
+        string? previousFingerprint,
+        string? currentFingerprint)
+    {
+        var previous = SplitFingerprint(previousFingerprint);
+        var current = SplitFingerprint(currentFingerprint);
+        var result = new List<ImageType>(2);
+        if (!previous.Poster.Equals(current.Poster, StringComparison.Ordinal))
+        {
+            result.Add(ImageType.Primary);
+        }
+
+        if (!previous.Logo.Equals(current.Logo, StringComparison.Ordinal))
+        {
+            result.Add(ImageType.Logo);
+        }
+
+        return result;
+    }
+
+    private static void AddChangedImageTypes(
+        IDictionary<Guid, HashSet<ImageType>> changes,
+        Guid itemId,
+        string? previousFingerprint,
+        string? currentFingerprint)
+    {
+        if (!changes.TryGetValue(itemId, out var imageTypes))
+        {
+            imageTypes = [];
+            changes[itemId] = imageTypes;
+        }
+
+        imageTypes.UnionWith(GetChangedImageTypes(previousFingerprint, currentFingerprint));
+    }
+
+    private static (string Poster, string Logo) SplitFingerprint(string? fingerprint)
+    {
+        var parts = (fingerprint ?? string.Empty).Split('|', 2);
+        return (
+            parts.ElementAtOrDefault(0) ?? string.Empty,
+            parts.ElementAtOrDefault(1) ?? string.Empty);
     }
 
     private static Dictionary<string, List<ArtworkManifestFile>> BuildReleaseLookup(
@@ -625,7 +712,8 @@ public sealed partial class ArtworkIndex
     private static HttpRequestMessage CreateRequest(HttpMethod method, Uri uri)
     {
         var request = new HttpRequestMessage(method, uri);
-        request.Headers.UserAgent.ParseAdd("Cowabunga-Custom-Artwork/2.3");
+        var version = typeof(ArtworkIndex).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+        request.Headers.UserAgent.ParseAdd($"Cowabunga-Custom-Artwork/{version}");
         return request;
     }
 

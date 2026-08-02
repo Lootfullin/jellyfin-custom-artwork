@@ -68,6 +68,17 @@ public sealed class ArtworkMediaWriter
                 ? _index.Matches.Keys.ToHashSet()
                 : _index.ChangedItemIds.ToHashSet();
 
+            var allMatchedItemIds = _index.Matches.Keys.ToHashSet();
+            var items = GetLibraryItems(allMatchedItemIds);
+            if (!processAll)
+            {
+                AddPendingItems(
+                    itemIds,
+                    items,
+                    configuration,
+                    state);
+            }
+
             foreach (var removed in state.Files.Values
                          .Where(file => !_index.Matches.ContainsKey(file.ItemId))
                          .Select(file => file.ItemId))
@@ -89,7 +100,6 @@ public sealed class ArtworkMediaWriter
                 return Array.Empty<Guid>();
             }
 
-            var items = GetLibraryItems(itemIds);
             var refreshed = new HashSet<Guid>();
 
             foreach (var itemId in itemIds)
@@ -158,6 +168,70 @@ public sealed class ArtworkMediaWriter
         {
             _gate.Release();
         }
+    }
+
+    private void AddPendingItems(
+        ISet<Guid> itemIds,
+        IReadOnlyDictionary<Guid, BaseItem> items,
+        PluginConfiguration configuration,
+        ManagedMediaState state)
+    {
+        foreach (var (itemId, artwork) in _index.Matches)
+        {
+            if (!items.TryGetValue(itemId, out var item) || item is BoxSet)
+            {
+                continue;
+            }
+
+            if (configuration.Posters
+                && artwork.Poster is not null
+                && NeedsSynchronization(
+                    GetDestinationPath(item, "poster", artwork.Poster.Path),
+                    artwork.Poster.Sha256,
+                    configuration.OverwriteExistingMediaFiles,
+                    state))
+            {
+                itemIds.Add(itemId);
+                continue;
+            }
+
+            if (configuration.Logos
+                && artwork.Logo is not null
+                && NeedsSynchronization(
+                    GetDestinationPath(item, "logo", artwork.Logo.Path),
+                    artwork.Logo.Sha256,
+                    configuration.OverwriteExistingMediaFiles,
+                    state))
+            {
+                itemIds.Add(itemId);
+            }
+        }
+    }
+
+    internal static bool NeedsSynchronization(
+        string? destination,
+        string sourceSha256,
+        bool overwriteExistingMediaFiles,
+        ManagedMediaState state)
+    {
+        if (destination is null)
+        {
+            return false;
+        }
+
+        if (!File.Exists(destination))
+        {
+            return true;
+        }
+
+        if (!state.Files.TryGetValue(destination, out var managed))
+        {
+            return overwriteExistingMediaFiles;
+        }
+
+        return !managed.Sha256.Equals(
+            sourceSha256,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private Dictionary<Guid, BaseItem> GetLibraryItems(IReadOnlySet<Guid> itemIds)
@@ -285,7 +359,8 @@ public sealed class ArtworkMediaWriter
             exception is HttpRequestException
             or IOException
             or UnauthorizedAccessException
-            or InvalidDataException)
+            or InvalidDataException
+            || exception is TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning(exception, "Custom Artwork: не записать изображение {Path}", destination);
             return false;
