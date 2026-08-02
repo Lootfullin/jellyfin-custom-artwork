@@ -34,6 +34,17 @@ jobs:
         shell: pwsh
         run: |
           $catalog = Get-Content manifest.json -Raw | ConvertFrom-Json
-          if ($catalog.Count -ne 1 -or @($catalog[0].versions).Count -ne 1) {
-            throw 'Catalog must contain one plugin with one current compatible version.'
+          if ($catalog.Count -ne 1 -or @($catalog[0].versions).Count -lt 1) {
+            throw 'Catalog must contain one plugin with at least one version.'
+          }
+
+          $versions = @($catalog[0].versions)
+          $versionNumbers = @($versions | ForEach-Object { [version]$_.version })
+          if (($versionNumbers | Sort-Object -Unique).Count -ne $versionNumbers.Count) {
+            throw 'Catalog versions must be unique.'
+          }
+
+          $latest = $versionNumbers | Sort-Object -Descending | Select-Object -First 1
+          if ([version]$versions[0].version -ne $latest) {
+            throw 'The newest catalog version must be listed first.'
           }
