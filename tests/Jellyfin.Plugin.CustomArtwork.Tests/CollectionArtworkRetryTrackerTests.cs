@@ -1,5 +1,7 @@
 namespace Jellyfin.Plugin.CustomArtwork.Tests;
 
+using MediaBrowser.Model.Entities;
+
 public sealed class CollectionArtworkRetryTrackerTests
 {
     [Theory]
@@ -8,7 +10,9 @@ public sealed class CollectionArtworkRetryTrackerTests
     [InlineData(3, 20)]
     [InlineData(4, 40)]
     [InlineData(5, 60)]
-    [InlineData(20, 60)]
+    [InlineData(7, 60)]
+    [InlineData(8, 1440)]
+    [InlineData(20, 1440)]
     public void RetryDelayUsesBoundedExponentialBackoff(int attempts, int expectedMinutes)
     {
         Assert.Equal(
@@ -36,5 +40,24 @@ public sealed class CollectionArtworkRetryTrackerTests
 
         Assert.Equal(0, entry.Attempts);
         Assert.Equal(now.AddHours(1), entry.NextAttemptUtc);
+    }
+
+    [Fact]
+    public void ExistingButWrongCollectionImagesAreQueuedForRefresh()
+    {
+        var artwork = new ArtworkSet
+        {
+            Poster = new ArtworkManifestFile { Path = "poster.jpg" },
+            Logo = new ArtworkManifestFile { Path = "clearlogo.png" },
+        };
+
+        var result = CollectionArtworkRetryTracker.GetUnappliedImageTypes(
+            artwork,
+            postersEnabled: true,
+            logosEnabled: true,
+            posterMatches: false,
+            logoMatches: false);
+
+        Assert.Equal([ImageType.Primary, ImageType.Logo], result);
     }
 }

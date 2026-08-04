@@ -3,9 +3,9 @@
     <TargetFramework>net9.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.CustomArtwork</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.CustomArtwork</AssemblyName>
-    <Version>2.4.2.0</Version>
-    <AssemblyVersion>2.4.2.0</AssemblyVersion>
-    <FileVersion>2.4.2.0</FileVersion>
+    <Version>2.4.3.0</Version>
+    <AssemblyVersion>2.4.3.0</AssemblyVersion>
+    <FileVersion>2.4.3.0</FileVersion>
     <JellyfinVersion Condition="'$(JellyfinVersion)' == ''">10.11.11</JellyfinVersion>
     <Description>Custom posters and logos from the Cowabunga artwork cloud.</Description>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>

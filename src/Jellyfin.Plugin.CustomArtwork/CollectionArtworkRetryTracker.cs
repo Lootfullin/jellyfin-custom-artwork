@@ -11,9 +11,11 @@ namespace Jellyfin.Plugin.CustomArtwork;
 
 public sealed class CollectionArtworkRetryTracker
 {
-    private const int StateSchemaVersion = 3;
+    private const int StateSchemaVersion = 4;
     private const int MaxRetriesPerRun = 200;
+    private const int FrequentRetryLimit = 8;
     private static readonly TimeSpan AuditInterval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan LongRetryInterval = TimeSpan.FromHours(24);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -142,14 +144,15 @@ public sealed class CollectionArtworkRetryTracker
                     continue;
                 }
 
-                var missingTypes = MissingImageTypes(
+                var unappliedTypes = await GetUnappliedImageTypesAsync(
                     item,
                     artwork,
                     postersEnabled,
-                    logosEnabled);
-                if (missingTypes.Count > 0)
+                    logosEnabled,
+                    cancellationToken).ConfigureAwait(false);
+                if (unappliedTypes.Count > 0)
                 {
-                    fallbackRequests.Add(new ArtworkRefreshRequest(itemId, missingTypes));
+                    fallbackRequests.Add(new ArtworkRefreshRequest(itemId, unappliedTypes));
                 }
             }
 
@@ -217,8 +220,9 @@ public sealed class CollectionArtworkRetryTracker
 
     internal bool IsCollection(Guid itemId) => _libraryManager.GetItemById(itemId) is BoxSet;
 
-    internal static TimeSpan RetryDelay(int attempts) =>
-        TimeSpan.FromMinutes(Math.Min(60, 5 * Math.Pow(2, Math.Clamp(attempts - 1, 0, 4))));
+    internal static TimeSpan RetryDelay(int attempts) => attempts >= FrequentRetryLimit
+        ? LongRetryInterval
+        : TimeSpan.FromMinutes(Math.Min(60, 5 * Math.Pow(2, Math.Clamp(attempts - 1, 0, 4))));
 
     private static string EffectiveFingerprint(ArtworkSet artwork, bool postersEnabled, bool logosEnabled) =>
         $"{(postersEnabled ? artwork.Poster?.Sha256 : null)}|{(logosEnabled ? artwork.Logo?.Sha256 : null)}".Trim('|');
@@ -240,6 +244,50 @@ public sealed class CollectionArtworkRetryTracker
         if (logosEnabled
             && artwork.Logo is not null
             && !HasImage(item, ImageType.Logo))
+        {
+            result.Add(ImageType.Logo);
+        }
+
+        return result;
+    }
+
+    private static async Task<IReadOnlyCollection<ImageType>> GetUnappliedImageTypesAsync(
+        BoxSet item,
+        ArtworkSet artwork,
+        bool postersEnabled,
+        bool logosEnabled,
+        CancellationToken cancellationToken)
+    {
+        var posterMatches = !postersEnabled
+            || artwork.Poster is null
+            || await ImageMatchesAsync(item, ImageType.Primary, artwork.Poster.Sha256, cancellationToken)
+                .ConfigureAwait(false);
+        var logoMatches = !logosEnabled
+            || artwork.Logo is null
+            || await ImageMatchesAsync(item, ImageType.Logo, artwork.Logo.Sha256, cancellationToken)
+                .ConfigureAwait(false);
+        return GetUnappliedImageTypes(
+            artwork,
+            postersEnabled,
+            logosEnabled,
+            posterMatches,
+            logoMatches);
+    }
+
+    internal static IReadOnlyCollection<ImageType> GetUnappliedImageTypes(
+        ArtworkSet artwork,
+        bool postersEnabled,
+        bool logosEnabled,
+        bool posterMatches,
+        bool logoMatches)
+    {
+        var result = new List<ImageType>(2);
+        if (postersEnabled && artwork.Poster is not null && !posterMatches)
+        {
+            result.Add(ImageType.Primary);
+        }
+
+        if (logosEnabled && artwork.Logo is not null && !logoMatches)
         {
             result.Add(ImageType.Logo);
         }

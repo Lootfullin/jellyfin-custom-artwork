@@ -69,12 +69,17 @@ public sealed class ArtworkMediaWriter
                 : _index.ChangedItemIds.ToHashSet();
 
             var allMatchedItemIds = _index.Matches.Keys.ToHashSet();
-            var items = GetLibraryItems(allMatchedItemIds);
+            var libraryItems = GetLibraryItems();
+            var items = libraryItems
+                .Where(pair => allMatchedItemIds.Contains(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+            var movieDirectoryCounts = BuildMovieDirectoryCounts(libraryItems.Values);
             if (!processAll)
             {
                 AddPendingItems(
                     itemIds,
                     items,
+                    movieDirectoryCounts,
                     configuration,
                     state);
             }
@@ -118,6 +123,7 @@ public sealed class ArtworkMediaWriter
                 }
 
                 var desiredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var includeGenericAliases = CanUseGenericAliases(item, movieDirectoryCounts);
                 if (configuration.Posters && artwork.Poster is not null)
                 {
                     var path = GetDestinationPath(item, "poster", artwork.Poster.Path);
@@ -125,6 +131,12 @@ public sealed class ArtworkMediaWriter
                     {
                         desiredPaths.Add(path);
                     }
+
+                    AddManagedCandidates(
+                        desiredPaths,
+                        GetCandidatePaths(item, "poster", artwork.Poster.Path, includeGenericAliases),
+                        itemId,
+                        state);
                 }
 
                 if (configuration.Logos && artwork.Logo is not null)
@@ -134,13 +146,26 @@ public sealed class ArtworkMediaWriter
                     {
                         desiredPaths.Add(path);
                     }
+
+                    AddManagedCandidates(
+                        desiredPaths,
+                        GetCandidatePaths(item, "logo", artwork.Logo.Path, includeGenericAliases),
+                        itemId,
+                        state);
                 }
 
                 CleanupManagedFiles(itemId, state, desiredPaths, refreshed);
 
                 if (configuration.Posters && artwork.Poster is not null)
                 {
-                    if (await SynchronizeAsync(item, "poster", artwork.Poster, configuration, state, cancellationToken)
+                    if (await SynchronizeAsync(
+                            item,
+                            "poster",
+                            artwork.Poster,
+                            includeGenericAliases,
+                            configuration,
+                            state,
+                            cancellationToken)
                             .ConfigureAwait(false))
                     {
                         refreshed.Add(itemId);
@@ -149,7 +174,14 @@ public sealed class ArtworkMediaWriter
 
                 if (configuration.Logos && artwork.Logo is not null)
                 {
-                    if (await SynchronizeAsync(item, "logo", artwork.Logo, configuration, state, cancellationToken)
+                    if (await SynchronizeAsync(
+                            item,
+                            "logo",
+                            artwork.Logo,
+                            includeGenericAliases,
+                            configuration,
+                            state,
+                            cancellationToken)
                             .ConfigureAwait(false))
                     {
                         refreshed.Add(itemId);
@@ -173,6 +205,7 @@ public sealed class ArtworkMediaWriter
     private void AddPendingItems(
         ISet<Guid> itemIds,
         IReadOnlyDictionary<Guid, BaseItem> items,
+        IReadOnlyDictionary<string, int> movieDirectoryCounts,
         PluginConfiguration configuration,
         ManagedMediaState state)
     {
@@ -183,10 +216,12 @@ public sealed class ArtworkMediaWriter
                 continue;
             }
 
+            var includeGenericAliases = CanUseGenericAliases(item, movieDirectoryCounts);
+
             if (configuration.Posters
                 && artwork.Poster is not null
-                && NeedsSynchronization(
-                    GetDestinationPath(item, "poster", artwork.Poster.Path),
+                && NeedsRoleSynchronization(
+                    GetCandidatePaths(item, "poster", artwork.Poster.Path, includeGenericAliases),
                     artwork.Poster.Sha256,
                     configuration.OverwriteExistingMediaFiles,
                     state))
@@ -197,8 +232,8 @@ public sealed class ArtworkMediaWriter
 
             if (configuration.Logos
                 && artwork.Logo is not null
-                && NeedsSynchronization(
-                    GetDestinationPath(item, "logo", artwork.Logo.Path),
+                && NeedsRoleSynchronization(
+                    GetCandidatePaths(item, "logo", artwork.Logo.Path, includeGenericAliases),
                     artwork.Logo.Sha256,
                     configuration.OverwriteExistingMediaFiles,
                     state))
@@ -206,6 +241,41 @@ public sealed class ArtworkMediaWriter
                 itemIds.Add(itemId);
             }
         }
+    }
+
+    internal static bool NeedsRoleSynchronization(
+        IReadOnlyList<string> candidates,
+        string sourceSha256,
+        bool overwriteExistingMediaFiles,
+        ManagedMediaState state)
+    {
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        var destination = candidates[0];
+        var aliases = candidates.Skip(1).Where(File.Exists).ToArray();
+        if (!File.Exists(destination)
+            && aliases.Any(path => !state.Files.ContainsKey(path))
+            && !overwriteExistingMediaFiles)
+        {
+            return false;
+        }
+
+        if (NeedsSynchronization(destination, sourceSha256, overwriteExistingMediaFiles, state))
+        {
+            return true;
+        }
+
+        if (aliases.Length == 0)
+        {
+            return false;
+        }
+
+        return overwriteExistingMediaFiles
+            || aliases.Any(path => state.Files.TryGetValue(path, out var managed)
+                && managed.Sha256.Equals(sourceSha256, StringComparison.OrdinalIgnoreCase));
     }
 
     internal static bool NeedsSynchronization(
@@ -234,7 +304,7 @@ public sealed class ArtworkMediaWriter
             StringComparison.OrdinalIgnoreCase);
     }
 
-    private Dictionary<Guid, BaseItem> GetLibraryItems(IReadOnlySet<Guid> itemIds)
+    private Dictionary<Guid, BaseItem> GetLibraryItems()
     {
         var query = new InternalItemsQuery
         {
@@ -249,7 +319,6 @@ public sealed class ArtworkMediaWriter
 
         return _libraryManager
             .GetItemList(query)
-            .Where(item => itemIds.Contains(item.Id))
             .ToDictionary(item => item.Id);
     }
 
@@ -257,6 +326,7 @@ public sealed class ArtworkMediaWriter
         BaseItem item,
         string role,
         ArtworkManifestFile source,
+        bool includeGenericAliases,
         PluginConfiguration configuration,
         ManagedMediaState state,
         CancellationToken cancellationToken)
@@ -268,6 +338,21 @@ public sealed class ArtworkMediaWriter
                 "Custom Artwork: не определена папка медиатеки для {Item} ({Id})",
                 item.Name,
                 item.Id);
+            return false;
+        }
+
+        var candidates = GetCandidatePaths(item, role, source.Path, includeGenericAliases);
+        var existingAliases = candidates
+            .Skip(1)
+            .Where(File.Exists)
+            .ToArray();
+        if (!configuration.OverwriteExistingMediaFiles
+            && existingAliases.Any(path => !state.Files.ContainsKey(path)))
+        {
+            _logger.LogWarning(
+                "Custom Artwork: локальный файл для {Role} позиции {Item} сохранён; включите замену существующих локальных изображений",
+                role,
+                item.Name);
             return false;
         }
 
@@ -284,7 +369,7 @@ public sealed class ArtworkMediaWriter
                     Role = role,
                     Sha256 = source.Sha256,
                 };
-                return false;
+                return CleanupAliases(existingAliases, state, configuration.OverwriteExistingMediaFiles);
             }
 
             overwriteManagedFile = true;
@@ -359,6 +444,7 @@ public sealed class ArtworkMediaWriter
                 Role = role,
                 Sha256 = source.Sha256,
             };
+            CleanupAliases(existingAliases, state, configuration.OverwriteExistingMediaFiles);
             return true;
         }
         catch (Exception exception) when (
@@ -424,6 +510,169 @@ public sealed class ArtworkMediaWriter
         }
 
         return Path.Combine(directory, fileName);
+    }
+
+    internal static IReadOnlyList<string> GetCandidatePaths(
+        BaseItem item,
+        string role,
+        string sourcePath,
+        bool includeGenericAliases)
+    {
+        var destination = GetDestinationPath(item, role, sourcePath);
+        if (destination is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var directory = Path.GetDirectoryName(destination)!;
+        var itemPath = Path.GetFullPath(item.Path);
+        var isDirectoryItem = item is Series or Season || Directory.Exists(itemPath);
+        var baseName = isDirectoryItem ? null : Path.GetFileNameWithoutExtension(itemPath);
+        var stems = new List<string>();
+        if (role.Equals("logo", StringComparison.Ordinal))
+        {
+            if (baseName is not null)
+            {
+                stems.Add($"{baseName}-clearlogo");
+                stems.Add($"{baseName}-logo");
+            }
+
+            if (isDirectoryItem || includeGenericAliases)
+            {
+                stems.Add("clearlogo");
+                stems.Add("logo");
+            }
+        }
+        else
+        {
+            if (baseName is not null)
+            {
+                stems.Add($"{baseName}-poster");
+                stems.Add($"{baseName}-folder");
+                stems.Add($"{baseName}-cover");
+                stems.Add($"{baseName}-default");
+            }
+
+            if (isDirectoryItem || includeGenericAliases)
+            {
+                stems.Add("poster");
+                stems.Add("folder");
+                stems.Add("cover");
+                stems.Add("default");
+            }
+        }
+
+        var sourceExtension = Path.GetExtension(sourcePath).ToLowerInvariant();
+        var extensions = new[] { sourceExtension, ".jpg", ".jpeg", ".png", ".webp" }
+            .Where(extension => extension.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        return new[] { destination }
+            .Concat(stems.SelectMany(stem => extensions.Select(extension => Path.Combine(directory, stem + extension))))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, int> BuildMovieDirectoryCounts(IEnumerable<BaseItem> items)
+    {
+        return items
+            .OfType<Movie>()
+            .Select(item => GetMediaDirectory(item.Path))
+            .Where(path => path is not null)
+            .GroupBy(path => path!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool CanUseGenericAliases(
+        BaseItem item,
+        IReadOnlyDictionary<string, int> movieDirectoryCounts)
+    {
+        if (item is not Movie)
+        {
+            return true;
+        }
+
+        var directory = GetMediaDirectory(item.Path);
+        return directory is not null
+            && movieDirectoryCounts.TryGetValue(directory, out var count)
+            && count == 1;
+    }
+
+    private static string? GetMediaDirectory(string? itemPath)
+    {
+        if (string.IsNullOrWhiteSpace(itemPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetDirectoryName(Path.GetFullPath(itemPath));
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+            or NotSupportedException
+            or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private static void AddManagedCandidates(
+        ISet<string> desiredPaths,
+        IEnumerable<string> candidates,
+        Guid itemId,
+        ManagedMediaState state)
+    {
+        foreach (var path in candidates)
+        {
+            if (state.Files.TryGetValue(path, out var managed) && managed.ItemId == itemId)
+            {
+                desiredPaths.Add(path);
+            }
+        }
+    }
+
+    private bool CleanupAliases(
+        IEnumerable<string> aliases,
+        ManagedMediaState state,
+        bool overwriteExistingMediaFiles)
+    {
+        var changed = false;
+        foreach (var path in aliases.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (overwriteExistingMediaFiles)
+                {
+                    File.Delete(path);
+                    state.Files.Remove(path);
+                    changed = true;
+                    continue;
+                }
+
+                if (!state.Files.TryGetValue(path, out var managed))
+                {
+                    continue;
+                }
+
+                var result = DeleteManagedFile(path, managed);
+                if (result == ManagedDeleteResult.Deleted)
+                {
+                    changed = true;
+                }
+
+                if (result != ManagedDeleteResult.Retry)
+                {
+                    state.Files.Remove(path);
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(exception, "Custom Artwork: не удалить конфликтующий локальный файл {Path}", path);
+            }
+        }
+
+        return changed;
     }
 
     private static void CleanupManagedFiles(

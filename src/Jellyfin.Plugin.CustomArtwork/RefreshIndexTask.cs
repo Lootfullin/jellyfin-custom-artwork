@@ -104,6 +104,7 @@ public sealed class RefreshIndexTask : IScheduledTask
             regularRequests
                 .Concat(collectionFallbacks)
                 .Concat(removedCollectionRoles));
+        _index.AcknowledgeChanges();
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
@@ -187,12 +188,7 @@ public sealed class RefreshIndexTask : IScheduledTask
 
     private void RequeueChangedItems(IEnumerable<ArtworkRefreshRequest> requests)
     {
-        var changed = requests
-            .GroupBy(request => request.ItemId)
-            .Select(group => new ArtworkRefreshRequest(
-                group.Key,
-                group.SelectMany(request => request.ImageTypes).Distinct().ToArray()))
-            .ToList();
+        var changed = MergeRefreshRequests(requests);
         foreach (var request in changed)
         {
             var options = new MetadataRefreshOptions(new DirectoryService(_fileSystem))
@@ -207,5 +203,17 @@ public sealed class RefreshIndexTask : IScheduledTask
         _logger.LogInformation(
             "Custom Artwork: обновление изображений поставлено в очередь для {Count} позиций",
             changed.Count);
+    }
+
+    internal static IReadOnlyList<ArtworkRefreshRequest> MergeRefreshRequests(
+        IEnumerable<ArtworkRefreshRequest> requests)
+    {
+        return requests
+            .Where(request => request.ItemId != Guid.Empty)
+            .GroupBy(request => request.ItemId)
+            .Select(group => new ArtworkRefreshRequest(
+                group.Key,
+                group.SelectMany(request => request.ImageTypes).Distinct().ToArray()))
+            .ToList();
     }
 }

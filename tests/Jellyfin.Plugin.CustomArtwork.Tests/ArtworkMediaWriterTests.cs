@@ -1,5 +1,8 @@
 namespace Jellyfin.Plugin.CustomArtwork.Tests;
 
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+
 public sealed class ArtworkMediaWriterTests : IDisposable
 {
     private readonly string _directory = Path.Combine(
@@ -63,6 +66,71 @@ public sealed class ArtworkMediaWriterTests : IDisposable
         Assert.False(ArtworkMediaWriter.NeedsSynchronization(
             path,
             "same-hash",
+            overwriteExistingMediaFiles: true,
+            state));
+    }
+
+    [Fact]
+    public void SeriesCandidatesIncludeJellyfinPosterAndLogoAliases()
+    {
+        var series = new Series { Path = _directory };
+
+        var posters = ArtworkMediaWriter.GetCandidatePaths(
+            series,
+            "poster",
+            "Shows/Example/poster.jpg",
+            includeGenericAliases: true);
+        var logos = ArtworkMediaWriter.GetCandidatePaths(
+            series,
+            "logo",
+            "Shows/Example/clearlogo.png",
+            includeGenericAliases: true);
+
+        Assert.Contains(Path.Combine(_directory, "poster.jpg"), posters);
+        Assert.Contains(Path.Combine(_directory, "folder.png"), posters);
+        Assert.Contains(Path.Combine(_directory, "cover.webp"), posters);
+        Assert.Contains(Path.Combine(_directory, "clearlogo.png"), logos);
+        Assert.Contains(Path.Combine(_directory, "logo.png"), logos);
+    }
+
+    [Fact]
+    public void MovieCandidatesUseGenericAliasesOnlyForDedicatedDirectory()
+    {
+        var video = CreateFile("Example.mkv");
+        var movie = new Movie { Path = video };
+
+        var dedicated = ArtworkMediaWriter.GetCandidatePaths(
+            movie,
+            "poster",
+            "Movies/Example/poster.jpg",
+            includeGenericAliases: true);
+        var shared = ArtworkMediaWriter.GetCandidatePaths(
+            movie,
+            "poster",
+            "Movies/Example/poster.jpg",
+            includeGenericAliases: false);
+
+        Assert.Contains(Path.Combine(_directory, "Example-poster.jpg"), dedicated);
+        Assert.Contains(Path.Combine(_directory, "folder.jpg"), dedicated);
+        Assert.DoesNotContain(Path.Combine(_directory, "folder.jpg"), shared);
+    }
+
+    [Fact]
+    public void ExistingUnmanagedAliasRequiresExplicitOverwrite()
+    {
+        var folder = CreateFile("folder.jpg");
+        var destination = Path.Combine(_directory, "Example-poster.jpg");
+        var candidates = new[] { destination, folder };
+        var state = new ManagedMediaState();
+
+        Assert.False(ArtworkMediaWriter.NeedsRoleSynchronization(
+            candidates,
+            "cloud-hash",
+            overwriteExistingMediaFiles: false,
+            state));
+        Assert.True(ArtworkMediaWriter.NeedsRoleSynchronization(
+            candidates,
+            "cloud-hash",
             overwriteExistingMediaFiles: true,
             state));
     }

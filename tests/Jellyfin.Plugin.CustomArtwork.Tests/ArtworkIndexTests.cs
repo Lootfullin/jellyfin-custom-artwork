@@ -364,6 +364,31 @@ public sealed class ArtworkIndexTests
     }
 
     [Fact]
+    public void CollectionMatching_CurrentIdentityRepairsStaleCustomCollectionState()
+    {
+        var correct = CreateFile("Collections/Iron Man Collection/poster.jpg", "collection");
+        correct.TmdbId = 131292;
+        var stale = CreateFile("Collections/Marvel Collection/poster.jpg", "collection");
+        stale.CollectionKey = "marvel";
+
+        var result = ArtworkIndex.MatchCollectionCandidates(
+            previousCollectionKey: "marvel",
+            identity: new ArtworkIdentity("collection", "131292", null),
+            memberTmdbIds: [],
+            candidateNames: ["Iron Man Collection"],
+            new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal),
+            ArtworkIndex.BuildPublishedIdentityLookup([correct]),
+            new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal),
+            new Dictionary<string, List<ArtworkManifestFile>>(StringComparer.Ordinal)
+            {
+                ["marvel"] = [stale],
+            });
+
+        Assert.NotNull(result);
+        Assert.Same(correct, result.Poster);
+    }
+
+    [Fact]
     public void MediaFolderDestination_UsesVideoBaseNameForMovie()
     {
         var directory = CreateTemporaryDirectory();
