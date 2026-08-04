@@ -13,7 +13,7 @@
                          "changelog":  "Локальные poster/folder/cover/default и clearlogo/logo корректно заменяются только по явной настройке; неприменённые изображения коллекций гарантированно ставятся на refresh; изменения индекса подтверждаются после постановки обновлений в очередь.",
                          "targetAbi":  "10.11.0.0",
                          "sourceUrl":  "https://github.com/Lootfullin/jellyfin-custom-artwork/releases/download/v2.4.3/Cowabunga.Custom.Artwork_2.4.3.0.zip",
-                         "checksum":  "84524db2283e7201a737916babbaebcc",
+                         "checksum":  "cec1d835992dd9d342837f98e767e952",
                          "timestamp":  "2026-08-03T00:25:00Z"
                      },
                      {
