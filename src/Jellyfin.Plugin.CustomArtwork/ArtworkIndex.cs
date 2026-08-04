@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.CustomArtwork;
 public sealed partial class ArtworkIndex
 {
     private const int MaxRevisionBytes = 4096;
-    private const int StateSchemaVersion = 2;
+    private const int StateSchemaVersion = 3;
     private const int MaxManifestBytes = 32 * 1024 * 1024;
     private const int MaxManifestFiles = 100_000;
     private const long MaxArtworkBytes = 100 * 1024 * 1024;
@@ -44,6 +44,7 @@ public sealed partial class ArtworkIndex
     private Dictionary<Guid, ArtworkSet> _byItemId = [];
     private HashSet<string> _allowedPaths = new(StringComparer.Ordinal);
     private ArtworkManifest? _manifest;
+    private ArtworkState? _pendingState;
 
     public ArtworkIndex(
         ILogger<ArtworkIndex> logger,
@@ -71,6 +72,19 @@ public sealed partial class ArtworkIndex
         = new Dictionary<Guid, IReadOnlyCollection<ImageType>>();
 
     internal IReadOnlyDictionary<Guid, ArtworkSet> Matches => _byItemId;
+
+    internal void AcknowledgeChanges()
+    {
+        if (_pendingState is null)
+        {
+            return;
+        }
+
+        SaveJsonAtomically(StatePath, _pendingState);
+        _pendingState = null;
+        ChangedItemIds = Array.Empty<Guid>();
+        ChangedImageTypes = new Dictionary<Guid, IReadOnlyCollection<ImageType>>();
+    }
 
     private static string DataFolder =>
         Plugin.Instance?.DataFolderPath ?? Path.Combine(Path.GetTempPath(), "CowabungaCustomArtwork");
@@ -353,7 +367,10 @@ public sealed partial class ArtworkIndex
         ChangedImageTypes = changedImageTypes.ToDictionary(
             pair => pair.Key,
             pair => (IReadOnlyCollection<ImageType>)pair.Value.ToArray());
-        SaveJsonAtomically(StatePath, currentState);
+        // An ordinary remote-image request may build the index before the
+        // scheduled task runs. Keep the diff pending until that task has queued
+        // every affected item; otherwise the request silently consumes changes.
+        _pendingState = currentState;
     }
 
     internal static IReadOnlyCollection<ImageType> GetChangedImageTypes(
@@ -510,16 +527,6 @@ public sealed partial class ArtworkIndex
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCollectionPart,
         IReadOnlyDictionary<string, List<ArtworkManifestFile>> byCustomCollectionKey)
     {
-        if (!string.IsNullOrWhiteSpace(previousCollectionKey)
-            && byCustomCollectionKey.TryGetValue(previousCollectionKey, out var stableMatches))
-        {
-            var stableArtwork = BuildArtworkSet(stableMatches);
-            if (stableArtwork is not null)
-            {
-                return stableArtwork;
-            }
-        }
-
         // Membership is the strongest signal for official collections. It also
         // repairs BoxSets whose provider ID or localized name was overwritten by
         // another metadata provider.
@@ -536,6 +543,18 @@ public sealed partial class ArtworkIndex
             if (identityArtwork is not null)
             {
                 return identityArtwork;
+            }
+        }
+
+        // Historical state is useful for explicitly mapped supercollections,
+        // but must not override current membership or a repaired TMDB identity.
+        if (!string.IsNullOrWhiteSpace(previousCollectionKey)
+            && byCustomCollectionKey.TryGetValue(previousCollectionKey, out var stableMatches))
+        {
+            var stableArtwork = BuildArtworkSet(stableMatches);
+            if (stableArtwork is not null)
+            {
+                return stableArtwork;
             }
         }
 

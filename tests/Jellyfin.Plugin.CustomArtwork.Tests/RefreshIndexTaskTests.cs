@@ -99,4 +99,22 @@ public sealed class RefreshIndexTaskTests
 
         Assert.Equal([ImageType.Primary], result);
     }
+
+    [Fact]
+    public void RefreshQueueDropsEmptyIdsAndMergesDuplicateRoles()
+    {
+        var itemId = Guid.NewGuid();
+        var requests = new[]
+        {
+            new ArtworkRefreshRequest(Guid.Empty, [ImageType.Primary]),
+            new ArtworkRefreshRequest(itemId, [ImageType.Primary]),
+            new ArtworkRefreshRequest(itemId, [ImageType.Primary, ImageType.Logo]),
+        };
+
+        var merged = RefreshIndexTask.MergeRefreshRequests(requests);
+
+        var request = Assert.Single(merged);
+        Assert.Equal(itemId, request.ItemId);
+        Assert.Equal([ImageType.Primary, ImageType.Logo], request.ImageTypes);
+    }
 }
